@@ -275,8 +275,3 @@ tests/.ci_generated/
 
 # Local Lance precision-matching dump scripts (not part of the repo)
 lance_compare/
-
-# FP8 quantization test sample images: tests/diffusion/quantization/
-# test_quantization_fp8.py saves these into the repo root for manual
-# inspection; they are byproducts and must never be committed.
-test_*_fp8.png
