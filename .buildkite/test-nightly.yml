@@ -962,7 +962,16 @@ steps:
         commands:
           - export HUNYUAN_IMAGE3_MODEL="tencent/HunyuanImage-3.0-Instruct"
           - export HUNYUAN_IMAGE3_DEVICES="0,1,2,3"
-          - pytest -s -v tests/e2e/accuracy/test_hunyuan_image3_pixel_accuracy.py -m full_model --run-level full_model
+          - |
+            set +e
+            pytest -s -v tests/e2e/accuracy/test_hunyuan_image3_pixel_accuracy.py -m full_model --run-level full_model
+            EXIT=$$?
+            # Upload the generated images (pass or fail): the H100-generated
+            # output is the source of truth for the committed golden baseline
+            # (H200-generated goldens measure SSIM ~0.964 here — same SM90
+            # kernels are NOT bit-identical across H100/H200).
+            buildkite-agent artifact upload "tests/e2e/accuracy/artifacts/**/*.png"
+            exit $$EXIT
         agents:
           queue: "mithril-h100-pool"
         plugins:
