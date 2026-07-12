@@ -108,10 +108,7 @@ steps:
     depends_on: upload-merge-pipeline
     steps:
       - label: "Entrypoint Test with H100"
-        # The suite relaunches an OmniServer per test class (~30 model loads,
-        # incl. ten ~27.5 GiB Bagel loads); 60 min passed only ~1 in 3 runs
-        # even on main, and vLLM 0.25 weight loading needs ~10 min more.
-        timeout_in_minutes: 90
+        timeout_in_minutes: 60
         commands:
           - pytest -s -v tests/entrypoints/ -m "advanced_model and cuda and H100" --run-level "advanced_model"
         agents:
@@ -149,9 +146,7 @@ steps:
                       type: DirectoryOrCreate
 
       - label: "Entrypoint Test with L4"
-        # 30 min left no headroom for a cold image pull (~11 min for new base
-        # layers) plus per-class engine relaunches; main passed at 26/30.
-        timeout_in_minutes: 45
+        timeout_in_minutes: 30
         commands:
           - pytest -s -v tests/entrypoints/ -m "advanced_model and cuda and L4" --run-level "advanced_model"
         agents:
