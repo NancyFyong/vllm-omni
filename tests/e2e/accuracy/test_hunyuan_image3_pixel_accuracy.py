@@ -27,15 +27,8 @@ WIDTH = 1024
 PROMPT = "A brown and white dog is running on the grass."
 MEAN_THRESHOLD = 3e-2
 P99_THRESHOLD = 3e-1
-# NOTE: re-baselined for the vLLM rebase (dev/vllm-align). HunyuanImage-3 is an
-# expert-parallel MoE model; the newer upstream vLLM (65a7b4628409, 585 commits
-# past the v0.24.0 tag that main tracks) shifted MoE kernel numerics, so the
-# structural-similarity metrics against the committed baseline drift to a
-# deterministic SSIM 0.9490 / PSNR 26.21 dB (the mean/p99 pixel-diff checks above
-# still pass — the image renders correctly). Thresholds relaxed to accept this
-# drift as the new bar. On main (older vLLM) the stricter 0.97 / 30.0 hold.
-SSIM_THRESHOLD = 0.94
-PSNR_THRESHOLD = 25.0
+SSIM_THRESHOLD = 0.97
+PSNR_THRESHOLD = 30.0
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 BASELINE_PATH = _REPO_ROOT / "tests" / "assets" / "hunyuan" / "hunyuan_baseline.png"

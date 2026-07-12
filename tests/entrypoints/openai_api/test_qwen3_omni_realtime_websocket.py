@@ -200,22 +200,17 @@ def _assert_realtime_smoke(result: dict) -> None:
 
 def _assert_realtime_accuracy(
     result: dict,
-    threshold: float = 0.8,
     whisper_model_size: str = "large-v3",
 ) -> None:
     """Assert that whisper transcription of audio output matches model text.
 
     Args:
         result: Roundtrip result dict from ``_run_realtime_audio_roundtrip``.
-        threshold: Minimum cosine similarity between whisper text and model text.
-                   Default 0.8 is appropriate for sync mode (exact match expected).
-                   Use 0.65 for async_chunk mode where chunked upload with pacing
-                   delays introduces inherent variability in audio codec quality.
         whisper_model_size: Whisper model used to transcribe the generated audio
                    for the accuracy check. Defaults to ``large-v3``: the default
                    ``small`` model mishears short Chinese TTS clips (observed:
                    北京→韦京 and a dropped leading sentence, sim=0.443), which
-                   caused spurious sim<threshold failures under async_chunk codec
+                   caused spurious sim<0.8 failures under async_chunk codec
                    variability even though audio generation was correct. large-v3
                    transcribes these clips reliably, so a failure here now points
                    at the model, not the ASR grader.
@@ -228,7 +223,7 @@ def _assert_realtime_accuracy(
     assert whisper_text, "Whisper returned empty string for synthesized output audio"
 
     sim = cosine_similarity_text(whisper_text.lower(), final_text.lower())
-    assert sim > threshold, (
+    assert sim > 0.8, (
         f"Output audio transcript should match model text (sim={sim:.3f}): "
         f"whisper={whisper_text!r}, model_text={final_text!r}"
     )
@@ -255,12 +250,7 @@ class TestQwen3OmniRealtimeWebSocket:
         )
 
         _assert_realtime_smoke(result)
-        # Use threshold=0.65 for async_chunk: chunked upload with send_delay_ms
-        # introduces inherent variability in audio codec quality. Whisper
-        # transcription is nondeterministic and may miss 1-2 words in async
-        # mode even when model text generation is correct.
-        # Sync mode uses the default 0.8 (exact match expected).
-        _assert_realtime_accuracy(result, threshold=0.65)
+        _assert_realtime_accuracy(result)
 
     @pytest.mark.advanced_model
     @pytest.mark.omni
