@@ -47,6 +47,37 @@ VAE-decode 172 ms + queue 0.2 ms + DiT 10888 ms); peak GPU memory 15014 MB.
 | Cache-DiT | 5647 | 5686 | 5804 | 0.177 | 1 GPU + cache, **1.99×** |
 | HSDP (shard=2) | 12001 | 12005 | 12101 | 0.083 | param-sharding: 14350 MB/GPU peak vs 15014 MB base (memory-scaling, not latency) |
 
+### Concurrency sweep (1 GPU, serial engine, H20)
+
+Lumina2 runs **serially** (`supports_request_batch=False`, served with `max_num_seqs=1`) —
+request-level fused batching is not implemented, consistent with the merged Boogu-Image
+pipeline ([#4995](https://github.com/vllm-project/vllm-omni/pull/4995)) and other recent
+serial image pipelines (`z_image`, `longcat_image`, `ovis_image`, `hunyuan_image3`). To
+characterize behaviour under concurrent load, we sweep client `--max-concurrency` 1/2/4
+against a single serial engine (16 prompts each, 1024², 30 steps). Throughput stays flat
+at the engine limit and latency grows ~linearly with queue depth, exactly as expected for
+a serial pipeline (matching #4995's reported shape):
+
+| Client concurrency | Throughput (qps) | Latency mean (ms) | p99 (ms) | Peak mem (MB) | Success |
+|---|---|---|---|---|---|
+| 1 | 0.088 | 11314 | 11490 | 15014 | 16/16 |
+| 2 | 0.092 | 21174 | 22163 | 15014 | 16/16 |
+| 4 | 0.092 | 39533 | 43906 | 15014 | 16/16 |
+
+qps is bounded by single-image latency (no fused batch); peak memory is constant because
+requests execute one at a time. For higher aggregate throughput, scale out with the
+parallelism flags above (TP / CFG / Cache-DiT) or run multiple engine replicas.
+
+```bash
+# concurrency sweep: same serve command, vary the client --max-concurrency
+for C in 1 2 4; do
+  python benchmarks/diffusion/diffusion_benchmark_serving.py \
+      --endpoint /v1/chat/completions --task t2i --dataset random \
+      --num-prompts 16 --num-inference-steps 30 --height 1024 --width 1024 \
+      --warmup-requests 2 --max-concurrency "$C" --port 8091
+done
+```
+
 ## Reproduce
 
 ```bash
