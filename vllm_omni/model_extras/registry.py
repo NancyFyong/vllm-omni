@@ -68,6 +68,10 @@ from vllm_omni.model_extras.sensenova_u1 import (
     SENSENOVA_U1_EXTRA_BODY_PARAMS,
     SENSENOVA_U1_EXTRA_OUTPUT_PARAMS,
 )
+from vllm_omni.model_extras.skyreels_v3 import (
+    SKYREELS_V3_V2V_EXTRA_BODY_PARAMS,
+    SKYREELS_V3_V2V_EXTRA_OUTPUT_PARAMS,
+)
 from vllm_omni.model_extras.vace import (
     VACE_EXTRA_BODY_PARAMS,
     VACE_EXTRA_OUTPUT_PARAMS,
@@ -238,6 +242,10 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
         "extra_body_params": VACE_EXTRA_BODY_PARAMS,
         "extra_output_params": VACE_EXTRA_OUTPUT_PARAMS,
         "image_to_video_prompt_builder": build_vace_image_to_video_prompt,
+    },
+    "SkyReelsV3V2VPipeline": {
+        "extra_body_params": SKYREELS_V3_V2V_EXTRA_BODY_PARAMS,
+        "extra_output_params": SKYREELS_V3_V2V_EXTRA_OUTPUT_PARAMS,
     },
     "MammothModa2DiTPipeline": {
         "extra_body_params": MAMMOTHMODA2_PREVIEW_EXTRA_BODY_PARAMS,
