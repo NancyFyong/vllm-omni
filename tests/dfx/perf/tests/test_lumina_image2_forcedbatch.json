@@ -1,0 +1,31 @@
+[
+    {
+        "test_name": "test_lumina2_forced_batch4",
+        "description": "Lumina-Image-2.0 forced request-batch fusion: max_num_seqs=4 + request-batch-max-wait-ms=300 so the engine accumulates 4 concurrent requests into one fused Next-DiT forward (expect ~2x peak memory and waiting=4 admission logs). 512x512, 20 steps, concurrency 4.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true,
+                "max-num-seqs": 4,
+                "request-batch-max-wait-ms": 300
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "512x512_steps20_forcedbatch4",
+                "dataset": "random",
+                "task": "t2i",
+                "width": 512,
+                "height": 512,
+                "num-inference-steps": 20,
+                "num-prompts": 16,
+                "max-concurrency": 4,
+                "warmup-requests": 4,
+                "warmup-concurrency": 4,
+                "warmup-num-inference-steps": 20,
+                "enable-negative-prompt": true
+            }
+        ]
+    }
+]

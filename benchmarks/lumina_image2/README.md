@@ -50,40 +50,70 @@ VAE-decode 172 ms + queue 0.2 ms + DiT 10888 ms); peak GPU memory 15014 MB.
 ### Request-level batching (1 GPU, H20)
 
 Lumina2 supports request-level fused batching (`supports_request_batch=True`): with
-`--max-num-seqs > 1` the engine accumulates concurrent requests within
-`--request-batch-max-wait-ms` and runs them as one fused Next-DiT batch (Gemma pads every
-prompt to a fixed length, so per-request embeddings stack without ragged padding). We
-compare a serial engine (`--max-num-seqs 1`, requests run one at a time) against a fused
-batch of 4 (`--max-num-seqs 4`), 16 prompts, client `--max-concurrency 4`:
+`--max-num-seqs > 1` the engine accumulates concurrent requests and runs them as one fused
+Next-DiT batch (Gemma pads every prompt to a fixed length, so per-request embeddings stack
+without ragged padding). Measured with the **official diffusion serving benchmark harness**
+(`tests/dfx/perf/scripts/run_diffusion_benchmark.py`, same tool as
+[#4995](https://github.com/vllm-project/vllm-omni/pull/4995)) — 512×512, 20 steps, random
+dataset, warmup excluded — sweeping client concurrency 1 / 2 / 4 for a serial engine
+(`--max-num-seqs 1`) vs. a batching engine (`--max-num-seqs 4`):
 
-| Resolution | Mode | Throughput (qps) | Latency mean (ms) | p99 (ms) | Peak mem (MB) | Success |
-|---|---|---|---|---|---|---|
-| 1024² | serial (`max_num_seqs=1`) | 0.092 | 39533 | 43906 | 15014 | 16/16 |
-| 1024² | fused batch=4 | 0.083 | 48000 | 55800 | 27820 | 16/16 |
-| 512² | serial (`max_num_seqs=1`) | 0.346 | 10500 | 11660 | 11544 | 16/16 |
-| 512² | fused batch=4 | 0.327 | 12220 | 15350 | 14750 | 16/16 |
+| Mode | Concurrency | Prompts | Throughput (qps) | Latency mean (s) | p99 (s) | Peak mem (MB) | Success |
+|---|---|---|---|---|---|---|---|
+| serial (`max_num_seqs=1`) | 1 | 4 | 0.478 | 2.091 | 2.124 | 11544 | 4/4 |
+| serial (`max_num_seqs=1`) | 2 | 8 | 0.501 | 3.747 | 4.092 | 11544 | 8/8 |
+| serial (`max_num_seqs=1`) | 4 | 16 | 0.497 | 7.303 | 8.139 | 11544 | 16/16 |
+| batch (`max_num_seqs=4`) | 1 | 4 | 0.476 | 2.099 | 2.107 | 12466 | 4/4 |
+| batch (`max_num_seqs=4`) | 2 | 8 | 0.503 | 3.725 | 4.034 | 12466 | 8/8 |
+| batch (`max_num_seqs=4`) | 4 | 16 | **0.522** | 7.321 | 9.098 | 13812 | 16/16 |
 
-Fusion is real — logs show `[RequestBatch] admission wait done waiting=4 max_batch=4` and
-peak memory grows ~1.9× (15014→27820 MB at 1024²) as four images denoise together. But
-**throughput does not improve**: the Next-DiT forward is already compute-bound on H20 at
-both resolutions, so fusing four requests just serializes the same FLOPs into one larger
-GEMM with no idle SM headroom to fill. Mean latency is slightly *worse* (admission wait +
-all four images finishing together), which is the expected trade for compute-bound work.
-This matches why other recent single-DiT image pipelines default to serial execution
+Fusion is real — logs show `[RequestBatch] admission wait done waiting=4 max_batch=4`, and
+peak memory grows with the fused batch (11544 → 13812 MB) as four images denoise together.
+Forcing a full batch of 4 with `--request-batch-max-wait-ms 300` (so the engine waits to
+gather 4 requests before each forward) gives **0.514 qps, 7.787 s mean, 9.227 s p99,
+14748 MB peak** at concurrency 4 — again on par with serial.
+
+The honest read: on Lumina2 at 512² the Next-DiT forward is roughly **compute-bound** on
+H20, so fusing four requests into one larger GEMM keeps throughput essentially flat (batch
+is within ±5% of serial, and marginally *higher* at concurrency 4: 0.522 vs 0.497 qps) —
+it does **not** regress. It trades a modest memory increase for equal-to-slightly-better
+throughput and does not help mean latency (the images finish together). For a real speedup
+on this model, scale out with the parallelism flags above (TP / CFG / Cache-DiT); request
+batching is kept for correctness parity and for headroom on smaller requests. This matches
+why other recent single-DiT image pipelines ship serial-by-default
 ([#4995](https://github.com/vllm-project/vllm-omni/pull/4995); `z_image`, `longcat_image`,
-`ovis_image`, `hunyuan_image3`). The support is kept for correctness parity and for
-deployments where multiple small requests (e.g. 512²) can share a step; for higher
-aggregate throughput on this model, scale out with the parallelism flags above (TP / CFG /
-Cache-DiT) or run multiple engine replicas.
+`ovis_image`, `hunyuan_image3`).
+
+Sample `Serving Benchmark Result` block (serial vs. batch at concurrency 4):
+
+```text
+============ Serving Benchmark Result ============   ← serial, max_num_seqs=1
+Max request concurrency:                 4
+Successful requests:                     16/16
+Request throughput (req/s):              0.50
+Latency Mean (s):                        7.3027
+Latency P99 (s):                         8.1391
+Peak Memory Max (MB):                    11544.00
+==================================================
+
+============ Serving Benchmark Result ============   ← batch, max_num_seqs=4
+Max request concurrency:                 4
+Successful requests:                     16/16
+Request throughput (req/s):              0.52
+Latency Mean (s):                        7.3212
+Latency P99 (s):                         9.0984
+Peak Memory Max (MB):                    13812.00
+==================================================
+```
+
+Reproduce (official harness, config committed under `tests/dfx/perf/tests/`):
 
 ```bash
-# serial vs fused batch: vary --max-num-seqs on the serve side, keep client concurrency 4
-vllm serve Alpha-VLLM/Lumina-Image-2.0 --omni --port 8091 \
-    --enable-diffusion-pipeline-profiler --max-num-seqs 4   # or 1 for serial
-python benchmarks/diffusion/diffusion_benchmark_serving.py \
-    --endpoint /v1/chat/completions --task t2i --dataset random \
-    --num-prompts 16 --num-inference-steps 30 --height 1024 --width 1024 \
-    --warmup-requests 2 --max-concurrency 4 --port 8091
+python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
+    --test-config-file tests/dfx/perf/tests/test_lumina_image2_vllm_omni.json -s -v
+# forced full batch=4 (adds --request-batch-max-wait-ms 300):
+python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
+    --test-config-file tests/dfx/perf/tests/test_lumina_image2_forcedbatch.json -s -v
 ```
 
 ## Reproduce
