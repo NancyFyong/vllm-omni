@@ -1,0 +1,14 @@
+{
+  "prompts": [
+    {"id": "landscape", "prompt": "A serene mountain lake at sunset, photorealistic, highly detailed, dramatic clouds reflected in still water"},
+    {"id": "portrait", "prompt": "A close-up portrait of an elderly fisherman with a weathered face and kind eyes, dramatic side lighting, 85mm photograph"},
+    {"id": "text", "prompt": "A cozy corner bookstore cafe with a wooden chalkboard sign that reads \"OPEN\", warm afternoon light through the window"},
+    {"id": "art", "prompt": "An astronaut riding a horse on the surface of Mars, epic digital art, vibrant colors, cinematic composition"}
+  ],
+  "negative_prompt": "blurry, low quality, distorted, watermark",
+  "height": 1024,
+  "width": 1024,
+  "num_inference_steps": 30,
+  "guidance_scale": 4.0,
+  "seed": 42
+}
