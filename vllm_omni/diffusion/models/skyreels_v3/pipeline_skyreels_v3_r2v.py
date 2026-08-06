@@ -9,7 +9,6 @@ import time
 from collections.abc import Iterable
 from typing import Any, ClassVar, cast
 
-import numpy as np
 import PIL.Image
 import torch
 import torchvision.transforms.functional as TF
@@ -38,6 +37,10 @@ from vllm_omni.diffusion.models.interface import (
     SupportsComponentDiscovery,
 )
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin, _is_rank_zero
+from vllm_omni.diffusion.models.skyreels_v3.aspect_ratio import (
+    DEFAULT_SKYREELS_V3_RESOLUTION,
+    resolve_bucket_size,
+)
 from vllm_omni.diffusion.models.wan2_2.pipeline_wan2_2 import (
     build_wan_scheduler,
     create_transformer_from_config,
@@ -66,12 +69,6 @@ DEFAULT_SKYREELS_R2V_STEPS = 50
 DEFAULT_SKYREELS_R2V_GUIDANCE = 7.5
 DEFAULT_SKYREELS_R2V_IMAGE_GUIDANCE = 5.0
 
-_RESOLUTION_TO_AREA = {
-    "480P": 480 * 832,
-    "540P": DEFAULT_SKYREELS_R2V_HEIGHT * DEFAULT_SKYREELS_R2V_WIDTH,
-    "720P": 720 * 1280,
-}
-
 
 def _load_image(image: str | PIL.Image.Image) -> PIL.Image.Image:
     if isinstance(image, str):
@@ -98,19 +95,13 @@ def _normalize_ref_images(raw_images: Any) -> list[PIL.Image.Image]:
         raise ValueError("SkyReels V3 R2V requires at least one reference image.")
     if len(raw_images) > MAX_SKYREELS_R2V_REF_IMAGES:
         raise ValueError(
-            f"SkyReels V3 R2V supports at most {MAX_SKYREELS_R2V_REF_IMAGES} reference images, "
-            f"got {len(raw_images)}."
+            f"SkyReels V3 R2V supports at most {MAX_SKYREELS_R2V_REF_IMAGES} reference images, got {len(raw_images)}."
         )
     return [_load_image(image) for image in raw_images]
 
 
 def _infer_target_size(image: PIL.Image.Image, resolution: str | None = None) -> tuple[int, int]:
-    area = _RESOLUTION_TO_AREA.get((resolution or "540P").upper(), _RESOLUTION_TO_AREA["540P"])
-    aspect_ratio = image.height / image.width
-    mod_value = 16
-    height = max(mod_value, round(np.sqrt(area * aspect_ratio)) // mod_value * mod_value)
-    width = max(mod_value, round(np.sqrt(area / aspect_ratio)) // mod_value * mod_value)
-    return height, width
+    return resolve_bucket_size(image.height, image.width, resolution)
 
 
 def _resize_and_pad_ref_images(
@@ -146,9 +137,7 @@ def _resize_and_pad_ref_images(
 
 def _resolve_guidance_scales(sampling_params: Any, extra_args: dict[str, Any]) -> tuple[float, float]:
     text_scale = (
-        sampling_params.guidance_scale
-        if sampling_params.guidance_scale_provided
-        else DEFAULT_SKYREELS_R2V_GUIDANCE
+        sampling_params.guidance_scale if sampling_params.guidance_scale_provided else DEFAULT_SKYREELS_R2V_GUIDANCE
     )
     if "cfg_text_scale" in extra_args:
         text_scale = extra_args["cfg_text_scale"]
@@ -208,7 +197,8 @@ def get_skyreels_v3_r2v_pre_process_func(
 
         extra_args = request.sampling_params.extra_args or {}
         if request.sampling_params.height is None or request.sampling_params.width is None:
-            height, width = _infer_target_size(ref_images[0], str(extra_args.get("resolution", "540P")))
+            resolution = str(extra_args.get("resolution", DEFAULT_SKYREELS_V3_RESOLUTION))
+            height, width = _infer_target_size(ref_images[0], resolution)
             if request.sampling_params.height is None:
                 request.sampling_params.height = height
             if request.sampling_params.width is None:
@@ -324,9 +314,7 @@ class SkyReelsV3R2VPipeline(
 
     @property
     def do_classifier_free_guidance(self):
-        return (
-            self._guidance_scale is not None and self._guidance_scale != 1.0
-        ) or (
+        return (self._guidance_scale is not None and self._guidance_scale != 1.0) or (
             self._guidance_scale_img is not None and self._guidance_scale_img != 1.0
         )
 
@@ -375,10 +363,7 @@ class SkyReelsV3R2VPipeline(
         if attention_kwargs is None:
             attention_kwargs = {}
         uncondition = torch.zeros_like(condition)
-        do_true_cfg = (
-            (guidance_scale != 1.0 or guidance_scale_img != 1.0)
-            and negative_prompt_embeds is not None
-        )
+        do_true_cfg = (guidance_scale != 1.0 or guidance_scale_img != 1.0) and negative_prompt_embeds is not None
         with self.progress_bar(total=len(timesteps)) as pbar:
             for step_idx, t in enumerate(timesteps):
                 self._current_timestep = t
@@ -432,9 +417,7 @@ class SkyReelsV3R2VPipeline(
         prompt: str | None = None
         negative_prompt: str | None = None
         if len(req.prompts) > 1:
-            raise ValueError(
-                "SkyReels V3 R2V only supports a single prompt per request, not a batched request."
-            )
+            raise ValueError("SkyReels V3 R2V only supports a single prompt per request, not a batched request.")
         if len(req.prompts) == 1:
             first_prompt = req.prompts[0]
             prompt = first_prompt if isinstance(first_prompt, str) else (first_prompt.get("prompt") or "")
@@ -699,9 +682,7 @@ class SkyReelsV3R2VPipeline(
         shape = (batch_size, num_channels_latents, num_latent_frames, latent_height, latent_width)
 
         if isinstance(generator, list) and len(generator) != batch_size:
-            raise ValueError(
-                f"Received {len(generator)} generators but the effective batch size is {batch_size}."
-            )
+            raise ValueError(f"Received {len(generator)} generators but the effective batch size is {batch_size}.")
         if latents is None:
             latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
         else:
