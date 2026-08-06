@@ -441,8 +441,6 @@ def main():
     height = args.height
     width = args.width
     if is_skyreels_a2v:
-        # Let the pipeline's portrait bucket logic choose the exact A2V size
-        # unless the caller explicitly requests height/width.
         height = args.height
         width = args.width
     elif height is None or width is None:
@@ -453,9 +451,7 @@ def main():
     media_inputs: dict[str, Any] = {}
     if image is not None:
         media_inputs["image"] = (
-            image
-            if is_skyreels_r2v or is_skyreels_a2v
-            else image.resize((width, height), PIL.Image.Resampling.LANCZOS)
+            image if is_skyreels_r2v or is_skyreels_a2v else image.resize((width, height), PIL.Image.Resampling.LANCZOS)
         )
     if args.audio is not None:
         media_inputs["audio"] = args.audio
@@ -467,10 +463,7 @@ def main():
         media_inputs["reference_images"] = (
             reference_images
             if is_skyreels_r2v
-            else [
-                reference.resize((width, height), PIL.Image.Resampling.LANCZOS)
-                for reference in reference_images
-            ]
+            else [reference.resize((width, height), PIL.Image.Resampling.LANCZOS) for reference in reference_images]
         )
 
     # Configure cache based on backend type
