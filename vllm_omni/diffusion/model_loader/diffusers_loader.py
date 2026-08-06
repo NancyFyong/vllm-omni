@@ -22,6 +22,7 @@ from vllm.model_executor.model_loader.weight_utils import (
     filter_files_not_needed_for_inference,
     maybe_download_from_modelscope,
     multi_thread_safetensors_weights_iterator,
+    pt_weights_iterator,
     safetensors_weights_iterator,
 )
 from vllm.transformers_utils.repo_utils import file_exists
@@ -254,11 +255,21 @@ class DiffusersPipelineLoader:
                 self.load_config.use_tqdm_on_load,
                 max_workers=num_threads,
             )
-        else:
+        elif use_safetensors:
             weights_iterator = safetensors_weights_iterator(
                 hf_weights_files,
                 self.load_config.use_tqdm_on_load,
                 self.load_config.safetensors_load_strategy,
+            )
+        else:
+            # Pure ``.bin`` / ``.pt`` checkpoints — the safetensors iterator
+            # would raise ``header too large`` on a pickle file. This mirrors
+            # the intent of ``fall_back_to_pt``: after ``_prepare_weights``
+            # already narrowed the file list to the .bin fallback, use the
+            # matching iterator.
+            weights_iterator = pt_weights_iterator(
+                hf_weights_files,
+                self.load_config.use_tqdm_on_load,
             )
 
         if self.counter_before_loading_weights == 0.0:
