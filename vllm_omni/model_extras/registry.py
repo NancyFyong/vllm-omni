@@ -213,6 +213,35 @@ def skyreels_v3_r2v_image_to_video_prompt(
     return result
 
 
+def skyreels_v3_a2v_image_to_video_prompt(
+    prompt: str,
+    negative_prompt: str | None,
+    media_inputs: Mapping[str, Any],
+    height: int | None = None,
+    width: int | None = None,
+    num_frames: int | None = None,
+) -> dict[str, Any]:
+    del height, width, num_frames
+    unsupported = set(media_inputs) - {"image", "audio"}
+    if unsupported:
+        raise ValueError(f"SkyReels V3 A2V does not support media inputs: {sorted(unsupported)}.")
+
+    image = media_inputs.get("image")
+    if not isinstance(image, Image.Image):
+        raise ValueError("SkyReels V3 A2V requires exactly one --image input as a PIL image.")
+    audio = media_inputs.get("audio")
+    if audio is None:
+        raise ValueError("SkyReels V3 A2V requires an audio input.")
+
+    result: dict[str, Any] = {
+        "prompt": prompt,
+        "multi_modal_data": {"image": image, "audio": audio},
+    }
+    if negative_prompt is not None:
+        result["negative_prompt"] = negative_prompt
+    return result
+
+
 _EXTRA_SPECS: dict[str, dict[str, Any]] = {
     "AudioXPipeline": {
         "extra_body_params": AUDIOX_EXTRA_BODY_PARAMS,
@@ -272,6 +301,27 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
     "SkyReelsV3R2VPipeline": {
         "extra_body_params": frozenset({"guidance_scale_img", "resolution"}),
         "image_to_video_prompt_builder": skyreels_v3_r2v_image_to_video_prompt,
+    },
+    "SkyReelsV3A2VPipeline": {
+        "extra_body_params": frozenset(
+            {
+                "audio_guide_scale",
+                "cfg_audio_scale",
+                "cfg_text_scale",
+                "connection_prompt",
+                "drop_frame",
+                "frame_num",
+                "max_frames_num",
+                "motion_frame",
+                "n_prompt",
+                "resolution",
+                "sampling_steps",
+                "shift",
+                "size_bucket",
+                "text_guide_scale",
+            }
+        ),
+        "image_to_video_prompt_builder": skyreels_v3_a2v_image_to_video_prompt,
     },
     "MammothModa2DiTPipeline": {
         "extra_body_params": MAMMOTHMODA2_PREVIEW_EXTRA_BODY_PARAMS,

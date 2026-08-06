@@ -26,6 +26,7 @@ This folder provides a unified CLI script for image-to-video generation using vL
 | `Wan-AI/Wan2.2-I2V-A14B-Diffusers` | 480 x 832 | 81 | 50 | 5.0 | Around 60 GiB BF16 for basic single-card usage |
 | `Wan-AI/Wan2.2-TI2V-5B-Diffusers` | 480 x 832 | 81 | 50 | 4.0 | Around 20–25 GiB BF16, smallest I2V model |
 | `Skywork/SkyReels-V3-R2V-14B` | 544 x 960 | 105 | 50 | text 7.5 / image 5.0 | Large 14B video model; use multiple GPUs or offload if needed |
+| `Skywork/SkyReels-V3-A2V-19B` | A2V bucket | 81 | 40 | text 1.0 / audio 1.0 | Talking avatar model; requires one portrait image and one audio file |
 | `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_i2v` | 480 x 832 | 121 | 50 | 6.0 | Around 100 GiB at default settings; the example enables `--enable-cpu-offload` + VAE tiling/slicing to fit an 80 GiB card |
 | `Lightricks/LTX-2` | 512 x 768 | 121 | 40 | video 3.0 / audio 7.0 | Memory use depends on frame count and tensor parallelism |
 
@@ -195,6 +196,23 @@ python image_to_video.py \
   --num-inference-steps 50 \
   --fps 24 \
   --output skyreels_r2v.mp4
+```
+
+### SkyReels V3 A2V Talking Avatar
+
+SkyReels V3 A2V accepts one portrait image and one driving audio file. The
+pipeline uses the model's portrait resolution bucket when `--height` and
+`--width` are omitted.
+
+```bash
+python image_to_video.py \
+  --model Skywork/SkyReels-V3-A2V-19B \
+  --image portrait.png \
+  --audio speech.wav \
+  --prompt "a person is talking" \
+  --extra-body '{"resolution": "480P", "sampling_steps": 4}' \
+  --fps 25 \
+  --output skyreels_a2v.mp4
 ```
 
 ### HunyuanVideo-1.5 I2V (480p)

@@ -21,6 +21,8 @@ HUNYUAN_IMAGE3_MAX_INPUT_IMAGES = 3
 BOOGU_IMAGE_MAX_INPUT_IMAGES = 1
 # SkyReels V3 reference-to-video supports 1-4 reference images.
 SKYREELS_V3_R2V_MAX_INPUT_IMAGES = 4
+# SkyReels V3 audio-to-video talking avatar supports one portrait image.
+SKYREELS_V3_A2V_MAX_INPUT_IMAGES = 1
 
 
 _DIFFUSION_MODEL_METADATA: dict[str, DiffusionModelMetadata] = {
@@ -49,6 +51,11 @@ _DIFFUSION_MODEL_METADATA: dict[str, DiffusionModelMetadata] = {
     "SkyReelsV3R2VPipeline": DiffusionModelMetadata(
         supports_multimodal_inputs=True,
         max_multimodal_image_inputs=SKYREELS_V3_R2V_MAX_INPUT_IMAGES,
+        attention_mask_free=True,
+    ),
+    "SkyReelsV3A2VPipeline": DiffusionModelMetadata(
+        supports_multimodal_inputs=True,
+        max_multimodal_image_inputs=SKYREELS_V3_A2V_MAX_INPUT_IMAGES,
         attention_mask_free=True,
     ),
     "WanVACEPipeline": DiffusionModelMetadata(attention_mask_free=True),
