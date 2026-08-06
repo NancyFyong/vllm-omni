@@ -45,6 +45,7 @@ VAE-decode 172 ms + queue 0.2 ms + DiT 10888 ms); peak GPU memory 15014 MB.
 | SP=2 (Ulysses) | 7313 | 7309 | 7529 | 0.137 | sequence parallel, **1.53×** |
 | CFG=2 | 5959 | 5955 | 6078 | 0.168 | CFG-parallel, **1.88×** |
 | Cache-DiT | 5647 | 5686 | 5804 | 0.177 | 1 GPU + cache, **1.99×** |
+| HSDP (shard=2) | 12001 | 12005 | 12101 | 0.083 | param-sharding: 14350 MB/GPU peak vs 15014 MB base (memory-scaling, not latency) |
 
 ## Reproduce
 
@@ -67,4 +68,17 @@ python benchmarks/diffusion/diffusion_benchmark_serving.py \
 python benchmarks/lumina_image2/make_comparison.py \
     --diffusers benchmarks/lumina_image2/outputs/diffusers \
     --vllm benchmarks/lumina_image2/outputs/vllm_omni
+```
+
+## Parallelism / acceleration flags
+
+Append to `vllm serve ... --omni` and re-run the same serving benchmark:
+
+```bash
+--tensor-parallel-size 2                      # TP=2
+--ulysses-degree 2                            # SP=2 (Ulysses)
+--cfg-parallel-size 2                         # CFG-parallel
+--cache-backend cache_dit                     # Cache-DiT (1 GPU)
+--use-hsdp --hsdp-shard-size 2 --hsdp-replicate-size 1   # HSDP param-sharding
+--enable-cpu-offload                          # layerwise CPU offload
 ```
