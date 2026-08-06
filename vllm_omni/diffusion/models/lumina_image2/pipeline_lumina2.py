@@ -29,7 +29,7 @@ from vllm_omni.diffusion.models.lumina_image2.lumina2_transformer import Lumina2
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
-from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
+from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch, split_diffusion_output_by_request
 from vllm_omni.model_executor.model_loader.weight_utils import download_weights_from_hf_specific
 
 logger = init_logger(__name__)
@@ -129,6 +129,13 @@ class Lumina2Pipeline(
     _dit_modules: ClassVar[list[str]] = ["transformer"]
     _encoder_modules: ClassVar[list[str]] = ["text_encoder"]
     _vae_modules: ClassVar[list[str]] = ["vae"]
+
+    # Request-level batching: multiple independent requests are fused into a
+    # single denoise pass (see ``forward``). The Gemma text encoder pads every
+    # prompt to a fixed ``max_sequence_length`` (default 256), so per-request
+    # embeddings already share a sequence length and stack without ragged
+    # padding.
+    supports_request_batch: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -279,6 +286,54 @@ class Lumina2Pipeline(
             latents = latents.to(device)
         return latents
 
+    def _resolve_batch_params(
+        self,
+        req: DiffusionRequestBatch,
+        *,
+        height: int,
+        width: int,
+        num_inference_steps: int,
+        guidance_scale: float,
+        num_images_per_prompt: int,
+    ) -> tuple[int, int, int, float, int]:
+        """Resolve the shared sampling params for a fused request batch.
+
+        Requests fused into one denoise pass must share the tensor-shaping and
+        loop-critical params (``height``/``width``/``num_inference_steps``) and
+        the CFG ``guidance_scale`` — otherwise a single batched latent tensor and
+        a single scheduler timestep schedule cannot represent them. We resolve
+        each value from the first request and reject any request that disagrees,
+        rather than silently generating wrong images for the others.
+        """
+        sampling_list = req.sampling_params_list
+        common = sampling_list[0]
+        r_height = common.height or height
+        r_width = common.width or width
+        r_steps = common.num_inference_steps or num_inference_steps
+        r_guidance = common.guidance_scale if common.guidance_scale_provided else guidance_scale
+        r_num_images = common.num_outputs_per_prompt if common.num_outputs_per_prompt > 0 else num_images_per_prompt
+
+        for idx, sp in enumerate(sampling_list[1:], start=1):
+            sp_height = sp.height or height
+            sp_width = sp.width or width
+            sp_steps = sp.num_inference_steps or num_inference_steps
+            sp_guidance = sp.guidance_scale if sp.guidance_scale_provided else guidance_scale
+            sp_num_images = sp.num_outputs_per_prompt if sp.num_outputs_per_prompt > 0 else num_images_per_prompt
+            if (sp_height, sp_width, sp_steps, sp_guidance, sp_num_images) != (
+                r_height,
+                r_width,
+                r_steps,
+                r_guidance,
+                r_num_images,
+            ):
+                raise ValueError(
+                    "Batched Lumina-Image-2.0 requests must share height, width, num_inference_steps, "
+                    "guidance_scale, and num_outputs_per_prompt to be fused into one denoise pass; "
+                    f"request 0 has {(r_height, r_width, r_steps, r_guidance, r_num_images)} but request "
+                    f"{idx} has {(sp_height, sp_width, sp_steps, sp_guidance, sp_num_images)}."
+                )
+        return r_height, r_width, r_steps, r_guidance, r_num_images
+
     def forward(
         self,
         req: DiffusionRequestBatch,
@@ -294,29 +349,30 @@ class Lumina2Pipeline(
         cfg_normalization: bool = True,
         max_sequence_length: int = 256,
         output_type: str = "pil",
-    ) -> DiffusionOutput:
-        if len(req.prompts) > 1:
-            logger.warning("This model only supports a single prompt. Taking only the first.")
-        first_prompt = req.prompts[0]
-        if isinstance(first_prompt, str):
-            prompt = first_prompt
-        else:
-            prompt = first_prompt.get("prompt") or ""
-            negative_prompt = first_prompt.get("negative_prompt") or negative_prompt
+    ) -> list[DiffusionOutput]:
+        # Collect one prompt / negative prompt per request. Requests may be a
+        # plain string or a dict carrying its own negative prompt.
+        prompts: list[str] = []
+        negative_prompts: list[str] = []
+        for item in req.prompts:
+            if isinstance(item, str):
+                prompts.append(item)
+                negative_prompts.append(negative_prompt)
+            else:
+                prompts.append(item.get("prompt") or "")
+                negative_prompts.append(item.get("negative_prompt") or negative_prompt)
 
-        height = req.sampling_params.height or height
-        width = req.sampling_params.width or width
-        num_inference_steps = req.sampling_params.num_inference_steps or num_inference_steps
-        # request.py fills guidance_scale=1.0 when omitted; only override the
-        # pipeline default when the caller actually supplied a value.
-        if req.sampling_params.guidance_scale_provided:
-            guidance_scale = req.sampling_params.guidance_scale
-        generator = req.sampling_params.generator or generator
-        num_images_per_prompt = (
-            req.sampling_params.num_outputs_per_prompt
-            if req.sampling_params.num_outputs_per_prompt > 0
-            else num_images_per_prompt
+        height, width, num_inference_steps, guidance_scale, num_images_per_prompt = self._resolve_batch_params(
+            req,
+            height=height,
+            width=width,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            num_images_per_prompt=num_images_per_prompt,
         )
+        # Per-request generators (one seed per request, expanded by
+        # num_images_per_prompt) so batching is numerically request-local.
+        generator = req.collate_request_generators(num_images_per_prompt, generator)
 
         if height % (self.vae_scale_factor * 2) != 0 or width % (self.vae_scale_factor * 2) != 0:
             raise ValueError(
@@ -325,21 +381,21 @@ class Lumina2Pipeline(
             )
 
         device = self._execution_device
-        batch_size = 1
+        batch_size = req.num_reqs
 
         self._guidance_scale = guidance_scale
         self._current_timestep = None
 
-        # 3. Encode input prompt
+        # 3. Encode input prompts (batched: [B * num_images, seq, dim])
         prompt_embeds, prompt_attention_mask = self.encode_prompt(
-            prompt,
+            prompts,
             device,
             num_images_per_prompt=num_images_per_prompt,
             max_sequence_length=max_sequence_length,
         )
         if self.do_classifier_free_guidance:
             negative_prompt_embeds, negative_prompt_attention_mask = self.encode_prompt(
-                negative_prompt,
+                negative_prompts,
                 device,
                 num_images_per_prompt=num_images_per_prompt,
                 max_sequence_length=max_sequence_length,
@@ -423,13 +479,19 @@ class Lumina2Pipeline(
         self._current_timestep = None
 
         if output_type == "latent":
-            return DiffusionOutput(output=latents)
+            result = DiffusionOutput(output=latents)
+        else:
+            latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
+            images = self.vae.decode(latents, return_dict=False)[0]
+            result = DiffusionOutput(
+                output=images, stage_durations=self.stage_durations if hasattr(self, "stage_durations") else None
+            )
 
-        latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
-        images = self.vae.decode(latents, return_dict=False)[0]
-
-        return DiffusionOutput(
-            output=images, stage_durations=self.stage_durations if hasattr(self, "stage_durations") else None
+        # Split the fused batch back into one DiffusionOutput per request.
+        return split_diffusion_output_by_request(
+            result,
+            req,
+            num_outputs_per_prompt=num_images_per_prompt,
         )
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:

@@ -7,6 +7,7 @@ Coverage:
 - CPU offloading (model-level sequential offload via --enable-cpu-offload)
 - Cache-DiT acceleration (1 GPU)
 - CFG-Parallel (2 GPU)
+- Request-level batching (1 GPU, --max-num-seqs 4)
 
 This validates:
  - Successful image generation at the expected 1024x1024 resolution with recommended
@@ -64,6 +65,18 @@ def _get_diffusion_feature_cases(model: str):
             ),
             id="parallel_001",
             marks=PARALLEL_FEATURE_MARKS,
+        ),
+        pytest.param(
+            OmniServerParams(
+                model=model,
+                # Request-level batching: --max-num-seqs > 1 is only accepted
+                # because Lumina2Pipeline declares supports_request_batch=True.
+                # If that flag regresses, the engine refuses to start and this
+                # case fails at server launch.
+                server_args=["--max-num-seqs", "4"],
+            ),
+            id="single_card_003_request_batch",
+            marks=SINGLE_CARD_FEATURE_MARKS,
         ),
     ]
 

@@ -47,35 +47,43 @@ VAE-decode 172 ms + queue 0.2 ms + DiT 10888 ms); peak GPU memory 15014 MB.
 | Cache-DiT | 5647 | 5686 | 5804 | 0.177 | 1 GPU + cache, **1.99×** |
 | HSDP (shard=2) | 12001 | 12005 | 12101 | 0.083 | param-sharding: 14350 MB/GPU peak vs 15014 MB base (memory-scaling, not latency) |
 
-### Concurrency sweep (1 GPU, serial engine, H20)
+### Request-level batching (1 GPU, H20)
 
-Lumina2 runs **serially** (`supports_request_batch=False`, served with `max_num_seqs=1`) —
-request-level fused batching is not implemented, consistent with the merged Boogu-Image
-pipeline ([#4995](https://github.com/vllm-project/vllm-omni/pull/4995)) and other recent
-serial image pipelines (`z_image`, `longcat_image`, `ovis_image`, `hunyuan_image3`). To
-characterize behaviour under concurrent load, we sweep client `--max-concurrency` 1/2/4
-against a single serial engine (16 prompts each, 1024², 30 steps). Throughput stays flat
-at the engine limit and latency grows ~linearly with queue depth, exactly as expected for
-a serial pipeline (matching #4995's reported shape):
+Lumina2 supports request-level fused batching (`supports_request_batch=True`): with
+`--max-num-seqs > 1` the engine accumulates concurrent requests within
+`--request-batch-max-wait-ms` and runs them as one fused Next-DiT batch (Gemma pads every
+prompt to a fixed length, so per-request embeddings stack without ragged padding). We
+compare a serial engine (`--max-num-seqs 1`, requests run one at a time) against a fused
+batch of 4 (`--max-num-seqs 4`), 16 prompts, client `--max-concurrency 4`:
 
-| Client concurrency | Throughput (qps) | Latency mean (ms) | p99 (ms) | Peak mem (MB) | Success |
-|---|---|---|---|---|---|
-| 1 | 0.088 | 11314 | 11490 | 15014 | 16/16 |
-| 2 | 0.092 | 21174 | 22163 | 15014 | 16/16 |
-| 4 | 0.092 | 39533 | 43906 | 15014 | 16/16 |
+| Resolution | Mode | Throughput (qps) | Latency mean (ms) | p99 (ms) | Peak mem (MB) | Success |
+|---|---|---|---|---|---|---|
+| 1024² | serial (`max_num_seqs=1`) | 0.092 | 39533 | 43906 | 15014 | 16/16 |
+| 1024² | fused batch=4 | 0.083 | 48000 | 55800 | 27820 | 16/16 |
+| 512² | serial (`max_num_seqs=1`) | 0.346 | 10500 | 11660 | 11544 | 16/16 |
+| 512² | fused batch=4 | 0.327 | 12220 | 15350 | 14750 | 16/16 |
 
-qps is bounded by single-image latency (no fused batch); peak memory is constant because
-requests execute one at a time. For higher aggregate throughput, scale out with the
-parallelism flags above (TP / CFG / Cache-DiT) or run multiple engine replicas.
+Fusion is real — logs show `[RequestBatch] admission wait done waiting=4 max_batch=4` and
+peak memory grows ~1.9× (15014→27820 MB at 1024²) as four images denoise together. But
+**throughput does not improve**: the Next-DiT forward is already compute-bound on H20 at
+both resolutions, so fusing four requests just serializes the same FLOPs into one larger
+GEMM with no idle SM headroom to fill. Mean latency is slightly *worse* (admission wait +
+all four images finishing together), which is the expected trade for compute-bound work.
+This matches why other recent single-DiT image pipelines default to serial execution
+([#4995](https://github.com/vllm-project/vllm-omni/pull/4995); `z_image`, `longcat_image`,
+`ovis_image`, `hunyuan_image3`). The support is kept for correctness parity and for
+deployments where multiple small requests (e.g. 512²) can share a step; for higher
+aggregate throughput on this model, scale out with the parallelism flags above (TP / CFG /
+Cache-DiT) or run multiple engine replicas.
 
 ```bash
-# concurrency sweep: same serve command, vary the client --max-concurrency
-for C in 1 2 4; do
-  python benchmarks/diffusion/diffusion_benchmark_serving.py \
-      --endpoint /v1/chat/completions --task t2i --dataset random \
-      --num-prompts 16 --num-inference-steps 30 --height 1024 --width 1024 \
-      --warmup-requests 2 --max-concurrency "$C" --port 8091
-done
+# serial vs fused batch: vary --max-num-seqs on the serve side, keep client concurrency 4
+vllm serve Alpha-VLLM/Lumina-Image-2.0 --omni --port 8091 \
+    --enable-diffusion-pipeline-profiler --max-num-seqs 4   # or 1 for serial
+python benchmarks/diffusion/diffusion_benchmark_serving.py \
+    --endpoint /v1/chat/completions --task t2i --dataset random \
+    --num-prompts 16 --num-inference-steps 30 --height 1024 --width 1024 \
+    --warmup-requests 2 --max-concurrency 4 --port 8091
 ```
 
 ## Reproduce
