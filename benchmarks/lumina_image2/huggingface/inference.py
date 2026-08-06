@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 import json
-import os
 import time
 from pathlib import Path
 
@@ -36,12 +35,12 @@ def main() -> None:
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    torch.cuda.reset_peak_memory_stats()
+    torch.accelerator.reset_peak_memory_stats()
     t_load0 = time.perf_counter()
     pipe = Lumina2Pipeline.from_pretrained(args.model_path, torch_dtype=torch.bfloat16)
     pipe = pipe.to("cuda")
     load_s = time.perf_counter() - t_load0
-    mem_load = torch.cuda.max_memory_allocated() / (1024**3)
+    mem_load = torch.accelerator.max_memory_allocated() / (1024**3)
 
     def gen(prompt: str):
         g = torch.Generator("cuda").manual_seed(cfg["seed"])
@@ -57,16 +56,16 @@ def main() -> None:
 
     # Warmup (excluded from timing) using the first prompt.
     _ = gen(cfg["prompts"][0]["prompt"])
-    torch.cuda.synchronize()
+    torch.accelerator.synchronize()
 
     results = []
     for item in cfg["prompts"]:
-        torch.cuda.reset_peak_memory_stats()
+        torch.accelerator.reset_peak_memory_stats()
         t0 = time.perf_counter()
         img = gen(item["prompt"])
-        torch.cuda.synchronize()
+        torch.accelerator.synchronize()
         dt = time.perf_counter() - t0
-        peak = torch.cuda.max_memory_allocated() / (1024**3)
+        peak = torch.accelerator.max_memory_allocated() / (1024**3)
         path = out_dir / f"{item['id']}.png"
         img.save(path)
         steps = cfg["num_inference_steps"]
@@ -74,9 +73,7 @@ def main() -> None:
             f"[diffusers] {item['id']:>10}  latency={dt * 1000:8.1f} ms  "
             f"per_step={dt / steps * 1000:6.1f} ms  peak={peak:.2f} GiB  -> {path}"
         )
-        results.append(
-            {"id": item["id"], "latency_ms": dt * 1000, "per_step_ms": dt / steps * 1000, "peak_gib": peak}
-        )
+        results.append({"id": item["id"], "latency_ms": dt * 1000, "per_step_ms": dt / steps * 1000, "peak_gib": peak})
 
     lat = [r["latency_ms"] for r in results]
     summary = {

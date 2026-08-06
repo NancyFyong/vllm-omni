@@ -81,6 +81,7 @@ def _is_lumina_transformer_block(name: str, module: object) -> bool:
     parts = name.split(".")
     return len(parts) >= 2 and parts[-2] == "layers" and parts[-1].isdigit()
 
+
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import QuantizationConfig
 

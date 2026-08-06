@@ -415,9 +415,7 @@ class Lumina2Pipeline(
                     negative_kwargs=negative_kwargs,
                     cfg_normalize=cfg_normalization,
                 )
-                latents = self.scheduler_step_maybe_with_cfg(
-                    noise_pred, t, latents, do_true_cfg, generator=generator
-                )
+                latents = self.scheduler_step_maybe_with_cfg(noise_pred, t, latents, do_true_cfg, generator=generator)
 
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
                     progress_bar.update()
