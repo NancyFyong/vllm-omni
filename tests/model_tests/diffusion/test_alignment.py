@@ -35,6 +35,7 @@ EXCLUDED_MODELS = [
     "MiniMaxH3Pipeline",
     "StableAudioPipeline",
     "WanImageToVideoPipeline",
+    "SkyReelsV3R2VPipeline",
     "WanS2VPipeline",
     "WanT2VDMD2Pipeline",
     "WanI2VDMD2Pipeline",
