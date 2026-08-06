@@ -24,6 +24,7 @@ This folder provides several entrypoints for experimenting with text-to-image di
 | `Qwen/Qwen-Image` | 1024 x 1024 | 60.0 | 53.7 |
 | `Qwen/Qwen-Image-2512` |1024 x 1024 | 60.0 | 53.7 |
 | `Tongyi-MAI/Z-Image-Turbo` | 1024 x 1024 | 24.8 | 19.2 |
+| `Alpha-VLLM/Lumina-Image-2.0` | 1024 x 1024 | 15.2 | 9.9 |
 | `stepfun-ai/NextStep-1.1` | 512 x 512 | 71.8 | 28.1 |
 | `meituan-longcat/LongCat-Image` | 1024 x 1024 | 71.2 | 27.3 |
 | `AIDC-AI/Ovis-Image-7B` | 1024 x 1024 | 71.8 | 17.1 |
