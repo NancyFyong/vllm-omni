@@ -55,6 +55,7 @@ DEFAULT_SKYREELS_V3_V2V_SHIFT = 8.0
 DEFAULT_SKYREELS_V3_V2V_CONDITION_FRAMES = 25
 DEFAULT_SKYREELS_V3_V2V_LATENT_FRAMES_PER_SECOND = 6
 DEFAULT_SKYREELS_V3_V2V_MAX_DURATION = 30
+DEFAULT_SKYREELS_V3_V2V_RESOLUTION = "720P"
 
 
 def _resolve_v2v_model_path(model: str | None) -> str:
@@ -311,7 +312,7 @@ def get_skyreels_v3_v2v_pre_process_func(
             )
 
         if request.sampling_params.height is None or request.sampling_params.width is None:
-            resolution = str(extra_args.get("resolution", DEFAULT_SKYREELS_V3_RESOLUTION))
+            resolution = str(extra_args.get("resolution", DEFAULT_SKYREELS_V3_V2V_RESOLUTION))
             height, width = resolve_bucket_size(frames.shape[1], frames.shape[2], resolution)
             if request.sampling_params.height is None:
                 request.sampling_params.height = height
@@ -530,8 +531,10 @@ class SkyReelsV3V2VPipeline(
             if isinstance(stored_fps, (int, float)) and not isinstance(stored_fps, bool):
                 source_fps = float(stored_fps)
 
-        height = int(req.sampling_params.height or resolve_bucket_size(frames.shape[1], frames.shape[2])[0])
-        width = int(req.sampling_params.width or resolve_bucket_size(frames.shape[1], frames.shape[2])[1])
+        resolution = str(extra_args.get("resolution", DEFAULT_SKYREELS_V3_V2V_RESOLUTION))
+        bucket_height, bucket_width = resolve_bucket_size(frames.shape[1], frames.shape[2], resolution)
+        height = int(req.sampling_params.height or bucket_height)
+        width = int(req.sampling_params.width or bucket_width)
         if height % 16 != 0 or width % 16 != 0:
             raise ValueError(f"`height` and `width` must be divisible by 16, got {height} and {width}.")
         if frames.shape[1] != height or frames.shape[2] != width:
