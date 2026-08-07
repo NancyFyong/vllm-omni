@@ -1,0 +1,31 @@
+[
+    {
+        "test_name": "test_lumina2_c4_forcedbatch_rep",
+        "description": "Lumina2 FORCED request-batch (max_num_seqs=4 + request-batch-max-wait-ms 300 => full batch=4 fusion), concurrency 4, 512x512/20 steps. Run repeatedly for mean+/-spread.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true,
+                "max-num-seqs": 4,
+                "request-batch-max-wait-ms": 300
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "512_c4_forcedbatch4",
+                "dataset": "random",
+                "task": "t2i",
+                "width": 512,
+                "height": 512,
+                "num-inference-steps": 20,
+                "num-prompts": [16],
+                "max-concurrency": [4],
+                "warmup-requests": 2,
+                "warmup-concurrency": 4,
+                "warmup-num-inference-steps": 20,
+                "enable-negative-prompt": true
+            }
+        ]
+    }
+]

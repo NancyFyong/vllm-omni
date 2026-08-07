@@ -52,68 +52,66 @@ VAE-decode 172 ms + queue 0.2 ms + DiT 10888 ms); peak GPU memory 15014 MB.
 Lumina2 supports request-level fused batching (`supports_request_batch=True`): with
 `--max-num-seqs > 1` the engine accumulates concurrent requests and runs them as one fused
 Next-DiT batch (Gemma pads every prompt to a fixed length, so per-request embeddings stack
-without ragged padding). Measured with the **official diffusion serving benchmark harness**
+without ragged padding). This is genuine fusion — the worker calls `pipeline.forward` once
+on a `DiffusionRequestBatch`, and logs confirm `[RequestBatch] admission wait done
+waiting=4 max_batch=4`.
+
+**Does it help throughput? No — it is throughput-neutral at this workload.** Measured with
+the **official diffusion serving benchmark harness**
 (`tests/dfx/perf/scripts/run_diffusion_benchmark.py`, same tool as
 [#4995](https://github.com/vllm-project/vllm-omni/pull/4995)) — 512×512, 20 steps, random
-dataset, warmup excluded — sweeping client concurrency 1 / 2 / 4 for a serial engine
-(`--max-num-seqs 1`) vs. a batching engine (`--max-num-seqs 4`):
+dataset, negative prompt on, concurrency 4, 16 prompts, warmup excluded, **3 measured
+repeats each** for mean ± spread:
 
-| Mode | Concurrency | Prompts | Throughput (qps) | Latency mean (s) | p99 (s) | Peak mem (MB) | Success |
-|---|---|---|---|---|---|---|---|
-| serial (`max_num_seqs=1`) | 1 | 4 | 0.478 | 2.091 | 2.124 | 11544 | 4/4 |
-| serial (`max_num_seqs=1`) | 2 | 8 | 0.501 | 3.747 | 4.092 | 11544 | 8/8 |
-| serial (`max_num_seqs=1`) | 4 | 16 | 0.497 | 7.303 | 8.139 | 11544 | 16/16 |
-| batch (`max_num_seqs=4`) | 1 | 4 | 0.476 | 2.099 | 2.107 | 12466 | 4/4 |
-| batch (`max_num_seqs=4`) | 2 | 8 | 0.503 | 3.725 | 4.034 | 12466 | 8/8 |
-| batch (`max_num_seqs=4`) | 4 | 16 | **0.522** | 7.321 | 9.098 | 13812 | 16/16 |
+| Engine mode | Throughput (qps), 3 runs | Mean qps | Latency mean (s) | Peak mem (MB) |
+|---|---|---|---|---|
+| serial (`max_num_seqs=1`) | 0.506 / 0.502 / 0.506 | **0.504** | 7.19 | 11544 |
+| opportunistic batch (`max_num_seqs=4`) | 0.451 / 0.453 / 0.521 | 0.475 | 8.12 | 13758 |
+| forced full batch (`max_num_seqs=4 --request-batch-max-wait-ms 300`) | 0.514 / 0.509 / 0.507 | **0.510** | 7.84 | 15160 |
 
-Fusion is real — logs show `[RequestBatch] admission wait done waiting=4 max_batch=4`, and
-peak memory grows with the fused batch (11544 → 13812 MB) as four images denoise together.
-Forcing a full batch of 4 with `--request-batch-max-wait-ms 300` (so the engine waits to
-gather 4 requests before each forward) gives **0.514 qps, 7.787 s mean, 9.227 s p99,
-14748 MB peak** at concurrency 4 — again on par with serial.
+The honest read, backed by the numbers above:
 
-The honest read: on Lumina2 at 512² the Next-DiT forward is roughly **compute-bound** on
-H20, so fusing four requests into one larger GEMM keeps throughput essentially flat (batch
-is within ±5% of serial, and marginally *higher* at concurrency 4: 0.522 vs 0.497 qps) —
-it does **not** regress. It trades a modest memory increase for equal-to-slightly-better
-throughput and does not help mean latency (the images finish together). For a real speedup
-on this model, scale out with the parallelism flags above (TP / CFG / Cache-DiT); request
-batching is kept for correctness parity and for headroom on smaller requests. This matches
-why other recent single-DiT image pipelines ship serial-by-default
-([#4995](https://github.com/vllm-project/vllm-omni/pull/4995); `z_image`, `longcat_image`,
-`ovis_image`, `hunyuan_image3`).
+- **Serial is tight and fast** (0.504 qps, ±0.002 across runs).
+- **Forced full-batch matches serial** — 0.510 vs 0.504 qps is +1.2%, inside run-to-run
+  spread — while costing **+31% peak memory** (15160 vs 11544 MB) and **higher mean
+  latency** (7.84 vs 7.19 s, because the four images finish together). Not a win.
+- **Opportunistic batching (no `--request-batch-max-wait-ms`) is the *worst* option**: its
+  throughput is wide and unstable (0.451–0.521) because it fuses whatever happens to be
+  queued. When it genuinely fuses a batch of four the per-batch forward gets larger and
+  end-to-end throughput drops to ~0.45; when arrivals miss the window it degenerates to
+  serial. It adds variance and memory with no upside.
 
-Sample `Serving Benchmark Result` block (serial vs. batch at concurrency 4):
+**Why fusion cannot help here:** the diffusion (denoise) stage is **≈98% of end-to-end
+latency** in every arm (`stage_0_gen_ms` ≈ 7.0–7.4 s vs `text_encoder` 42 ms + `vae.decode`
+43 ms), and at 512² a single-image Next-DiT forward already saturates the H20. Fusing four
+requests into one forward does not reduce total FLOPs and there is no spare GPU utilization
+to reclaim, so throughput stays flat while activation memory and (with CFG) the effective
+batch grow. For a real speedup on this model, scale out with the parallelism flags above
+(TP / CFG / Cache-DiT). Request batching is kept for correctness parity and for headroom on
+*smaller* requests, matching why other recent single-DiT image pipelines ship
+serial-by-default ([#4995](https://github.com/vllm-project/vllm-omni/pull/4995);
+`z_image`, `longcat_image`, `ovis_image`, `hunyuan_image3`).
 
-```text
-============ Serving Benchmark Result ============   ← serial, max_num_seqs=1
-Max request concurrency:                 4
-Successful requests:                     16/16
-Request throughput (req/s):              0.50
-Latency Mean (s):                        7.3027
-Latency P99 (s):                         8.1391
-Peak Memory Max (MB):                    11544.00
-==================================================
+**Correctness of the fused path (merge gate).** Four fixed `(prompt, seed)` requests sent
+serial (batch-of-1) vs. concurrent (fused batch=4) through one server, same seeds,
+512²/20 steps. Both paths are individually **bit-exact on rerun** (serial-vs-serial and
+fused-vs-fused PSNR = ∞), so any serial-vs-fused difference is deterministic, not sampling
+noise, and seed/prompt routing is verified correct. Serial vs. fused: **3 of 4 prompts
+near-identical (40.4 / 41.7 / 42.8 dB PSNR, SSIM ≥ 0.99); 1 of 4** (a high-frequency
+portrait) is the **same subject/pose/composition** but with perturbed fine texture (20.2 dB,
+SSIM 0.80). The cause is the bf16 batched-GEMM reduction-order change amplified over the
+20-step Euler sampler — the standard "numerically-equivalent-in-expectation, not bit-exact"
+behavior of fused diffusion batching, not a routing or correctness bug.
 
-============ Serving Benchmark Result ============   ← batch, max_num_seqs=4
-Max request concurrency:                 4
-Successful requests:                     16/16
-Request throughput (req/s):              0.52
-Latency Mean (s):                        7.3212
-Latency P99 (s):                         9.0984
-Peak Memory Max (MB):                    13812.00
-==================================================
-```
-
-Reproduce (official harness, config committed under `tests/dfx/perf/tests/`):
+Reproduce (official harness, configs committed under `tests/dfx/perf/tests/`):
 
 ```bash
+# serial vs opportunistic batch, concurrency 4 (run 3x for spread):
 python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
-    --test-config-file tests/dfx/perf/tests/test_lumina_image2_vllm_omni.json -s -v
+    --test-config-file tests/dfx/perf/tests/test_lumina_image2_c4_repeat.json -s -v
 # forced full batch=4 (adds --request-batch-max-wait-ms 300):
 python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
-    --test-config-file tests/dfx/perf/tests/test_lumina_image2_forcedbatch.json -s -v
+    --test-config-file tests/dfx/perf/tests/test_lumina_image2_c4_forcedbatch_repeat.json -s -v
 ```
 
 ## Reproduce
