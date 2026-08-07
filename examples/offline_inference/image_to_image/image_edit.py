@@ -205,6 +205,16 @@ def parse_args() -> argparse.Namespace:
         "--guidance-scale-2", type=float, default=None, help="image guidance scale for image-to-image generation."
     )
     parser.add_argument(
+        "--strength",
+        type=float,
+        default=None,
+        help=(
+            "Z-Image / Lumina-Image-2.0 only: how far to denoise from the input image, in [0.0, 1.0] "
+            "(default: 0.6). Lower values preserve more of the original image; higher values allow more "
+            "creative changes. Ignored by instruction-based editing models such as Qwen-Image-Edit."
+        ),
+    )
+    parser.add_argument(
         "--extra-args",
         type=parse_profiler_config,
         default=None,
@@ -555,6 +565,7 @@ def main():
         resolution=args.resolution,
         height=args.height,
         width=args.width,
+        strength=args.strength,
     )
     if declared_extra_body_params:
         apply_declared_extra_args(

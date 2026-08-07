@@ -1,0 +1,59 @@
+[
+    {
+        "test_name": "test_lumina2_i2i_single_device_serial",
+        "description": "Lumina-Image-2.0 image-to-image (SDEdit) single-device serial baseline (max_num_seqs=1), concurrency sweep 1/2/4 at 512x512, 20 steps, strength=0.6. Serial engine: throughput is expected to stay flat and latency to grow with queue depth.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "i2i_512x512_steps20_strength0.6_serial",
+                "dataset": "random",
+                "task": "i2i",
+                "width": 512,
+                "height": 512,
+                "num-inference-steps": 20,
+                "num-prompts": [4, 8, 16],
+                "max-concurrency": [1, 2, 4],
+                "warmup-requests": 2,
+                "warmup-concurrency": 1,
+                "warmup-num-inference-steps": 20,
+                "enable-negative-prompt": true,
+                "extra-body": {"strength": 0.6}
+            }
+        ]
+    },
+    {
+        "test_name": "test_lumina2_i2i_single_device_request_batch",
+        "description": "Lumina-Image-2.0 image-to-image (SDEdit) single-device request-level batching (max_num_seqs=4, supports_request_batch=True), concurrency sweep 1/2/4 at 512x512, 20 steps, strength=0.6. Concurrent i2i requests are fused into one Next-DiT forward; the batch shares height/width/strength via _resolve_batch_params.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true,
+                "max-num-seqs": 4
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "i2i_512x512_steps20_strength0.6_batch4",
+                "dataset": "random",
+                "task": "i2i",
+                "width": 512,
+                "height": 512,
+                "num-inference-steps": 20,
+                "num-prompts": [4, 8, 16],
+                "max-concurrency": [1, 2, 4],
+                "warmup-requests": 2,
+                "warmup-concurrency": 4,
+                "warmup-num-inference-steps": 20,
+                "enable-negative-prompt": true,
+                "extra-body": {"strength": 0.6}
+            }
+        ]
+    }
+]

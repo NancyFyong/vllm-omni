@@ -2,7 +2,10 @@
 
 This example demonstrates how to deploy image-to-image models for online image editing service using vLLM-Omni.
 
-Supported models include Qwen-Image-Edit, BAGEL, and other image-to-image pipelines.
+Supported models include Qwen-Image-Edit, BAGEL, and other image-to-image pipelines. Text-to-image
+checkpoints without a dedicated editing variant — such as Z-Image and Lumina-Image-2.0 — serve
+image-to-image by re-noising the input image and denoising only the tail of the schedule (SDEdit),
+controlled by `strength`.
 
 For **multi-image** input editing, use **Qwen-Image-Edit-2509** (QwenImageEditPlusPipeline) and send multiple images in the user message content.
 
@@ -332,7 +335,7 @@ count, use `size` and `n` rather than `height`, `width`, or
 | `seed`                   | int   | None    | Random seed (reproducible)            |
 | `negative_prompt`        | str   | None    | Negative prompt                       |
 | `num_outputs_per_prompt` | int   | 1       | Number of images to generate          |
-| `strength`               | float | 0.6     | **Z-Image only** - Denoising start timestep for I2I. Range: [0.0, 1.0]. Lower preserves more of original image. |
+| `strength`               | float | 0.6     | **Z-Image / Lumina-Image-2.0 only** - Denoising start timestep for I2I. Range: [0.0, 1.0]. Lower preserves more of original image. |
 | `layers`                 | int   | 4       | Number of layers (Qwen-Image-Layered) |
 | `resolution`             | int   | 640     | Resolution, 640 or 1024 (Qwen-Image-Layered) |
 

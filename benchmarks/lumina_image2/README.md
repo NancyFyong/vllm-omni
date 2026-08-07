@@ -1,13 +1,15 @@
 # Lumina-Image-2.0 Benchmarks
 
-Benchmarks for Lumina-Image-2.0 (Next-DiT) text-to-image across three backends:
-diffusers baseline, vLLM-Omni offline, and vLLM-Omni online serving.
+Benchmarks for Lumina-Image-2.0 (Next-DiT) — text-to-image across three backends
+(diffusers baseline, vLLM-Omni offline, vLLM-Omni online serving), plus
+SDEdit-style **image-to-image** on the same served checkpoint.
 
 | Benchmark | Script | Description |
 |-----------|--------|-------------|
-| diffusers baseline | `huggingface/inference.py` | Single-GPU `Lumina2Pipeline` reference (images + speed) |
-| vLLM-Omni offline | `vllm-omni/inference.py` | Offline inference, same prompts/seed/size/steps |
-| vLLM-Omni online | official `benchmarks/diffusion/diffusion_benchmark_serving.py` | `/v1/chat/completions`, latency/throughput/stage timing |
+| diffusers baseline (t2i) | `huggingface/inference.py` | Single-GPU `Lumina2Pipeline` reference (images + speed) |
+| vLLM-Omni offline (t2i) | `vllm-omni/inference.py` | Offline inference, same prompts/seed/size/steps |
+| vLLM-Omni offline (i2i) | `vllm-omni/inference_i2i.py` | Same served model, SDEdit i2i sweeping `strength` |
+| vLLM-Omni online (t2i / i2i) | official `benchmarks/diffusion/diffusion_benchmark_serving.py` | `/v1/chat/completions`, latency/throughput/stage timing |
 
 All runs: **1024×1024, 30 steps, guidance 4.0, seed 42**, bf16, on **NVIDIA H20**,
 torch 2.11.0+cu130, diffusers 0.38.0. Warmup excluded.
@@ -116,6 +118,97 @@ python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
     --test-config-file tests/dfx/perf/tests/test_lumina_image2_forcedbatch.json -s -v
 ```
 
+## Image-to-image (SDEdit)
+
+Lumina-Image-2.0 ships no editing checkpoint — image-to-image runs SDEdit-style
+on the same t2i weights: the input image is VAE-encoded, re-noised at the sigma
+selected by `strength`, and only the tail of the schedule is denoised. A request
+carrying `multi_modal_data["image"]` takes the i2i path; everything else is
+unchanged. See [../../examples/offline_inference/image_to_image/image_to_image.md](../../examples/offline_inference/image_to_image/image_to_image.md).
+
+No diffusers Lumina2 img2img pipeline exists, so a like-for-like external
+baseline is omitted; the numbers below characterize how the served pipeline
+behaves under concurrency and request-level batching, using the same official
+harness as the t2i request-batching numbers.
+
+### Request-level batching (1 GPU, H20, i2i)
+
+Same harness (`tests/dfx/perf/scripts/run_diffusion_benchmark.py`), same
+methodology as the t2i table above — 512×512, 20 steps, **strength = 0.6**
+(denoises the tail ~60% of the schedule), random dataset with synthetic input
+images, warmup excluded. Sweeping client concurrency 1 / 2 / 4 for a serial
+engine (`--max-num-seqs 1`) vs. a batching engine (`--max-num-seqs 4`):
+
+| Mode | Concurrency | Prompts | Throughput (qps) | Latency mean (s) | p99 (s) | Peak mem (MB) | Success |
+|---|---|---|---|---|---|---|---|
+| serial (`max_num_seqs=1`) | 1 | 4 | 0.750 | 1.335 | 1.346 | 11544 | 4/4 |
+| serial (`max_num_seqs=1`) | 2 | 8 | 0.786 | 2.377 | 2.565 | 11544 | 8/8 |
+| serial (`max_num_seqs=1`) | 4 | 16 | 0.788 | 4.568 | 5.068 | 11544 | 16/16 |
+| batch (`max_num_seqs=4`) | 1 | 4 | 0.767 | 1.301 | 1.310 | 12466 | 4/4 |
+| batch (`max_num_seqs=4`) | 2 | 8 | 0.785 | 2.386 | 2.584 | 12466 | 8/8 |
+| batch (`max_num_seqs=4`) | 4 | 16 | **0.812** | 4.763 | 6.227 | 13812 | 16/16 |
+
+Two things worth noting up front. First, i2i mean latency at `strength=0.6` is
+roughly **63% of t2i** at the same size/steps (1.335 s vs 2.091 s at c=1) — SDEdit
+skips the first ~40% of the denoise, and that ratio holds all the way up the
+concurrency sweep. Second, request-batch fusion is again real for i2i — peak
+memory at concurrency 4 grows from 11544 → 13812 MB as four images denoise
+together, and `[RequestBatch] admission wait done waiting=4 max_batch=4`
+appears in the batch server log.
+
+The batching contract in this branch is stricter for i2i than for t2i: fused
+requests must additionally share `strength` and whether they carry an input
+image, and (when the request gives no `--height`/`--width`) they must land on
+the same image-derived size. Two i2i requests with mismatched strength or
+aspect ratio are explicitly rejected rather than silently resized — the same
+philosophy as the existing height/width/steps/guidance homogeneity check.
+
+Forcing a full batch of 4 with `--request-batch-max-wait-ms 300` (so the
+engine waits to gather 4 requests before each forward) gives **0.820 qps,
+4.892 s mean, 6.184 s p99, 14748 MB peak** at concurrency 4 — on par with
+serial and opportunistic batch, and the batch-4 admission logs confirm every
+forward fuses 4 requests (`waited_ms` under 4 ms in all five iterations).
+
+The honest read matches t2i: at 512² the Next-DiT forward is compute-bound on
+H20 even with only ~12 residual steps, so fusing four requests keeps
+throughput essentially flat (batch is within ±5% of serial, and marginally
+higher at concurrency 4: 0.812 vs 0.788 qps) and does not help mean latency
+(the fused images finish together). Fusion is kept for correctness parity and
+smaller-request headroom; for a real speedup, scale out with the same
+parallelism flags the t2i section uses (TP / CFG / Cache-DiT).
+
+Sample `Serving Benchmark Result` block (serial vs. batch at concurrency 4, i2i):
+
+```text
+============ Serving Benchmark Result ============   ← serial, max_num_seqs=1
+Max request concurrency:                 4
+Successful requests:                     16/16
+Request throughput (req/s):              0.79
+Latency Mean (s):                        4.5682
+Latency P99 (s):                         5.0678
+Peak Memory Max (MB):                    11544.00
+==================================================
+
+============ Serving Benchmark Result ============   ← batch, max_num_seqs=4
+Max request concurrency:                 4
+Successful requests:                     16/16
+Request throughput (req/s):              0.81
+Latency Mean (s):                        4.7633
+Latency P99 (s):                         6.2268
+Peak Memory Max (MB):                    13812.00
+==================================================
+```
+
+Reproduce (official harness, i2i configs committed alongside the t2i ones):
+
+```bash
+python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
+    --test-config-file tests/dfx/perf/tests/test_lumina_image2_i2i_vllm_omni.json -s -v
+# forced full batch=4 (adds --request-batch-max-wait-ms 300):
+python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
+    --test-config-file tests/dfx/perf/tests/test_lumina_image2_i2i_forcedbatch.json -s -v
+```
+
 ## Reproduce
 
 ```bash
@@ -124,6 +217,10 @@ CUDA_VISIBLE_DEVICES=0 python benchmarks/lumina_image2/huggingface/inference.py
 
 # vLLM-Omni offline
 CUDA_VISIBLE_DEVICES=0 python benchmarks/lumina_image2/vllm-omni/inference.py
+
+# vLLM-Omni offline i2i (SDEdit)
+CUDA_VISIBLE_DEVICES=0 python benchmarks/lumina_image2/vllm-omni/inference_i2i.py \
+    --input-image benchmarks/lumina_image2/outputs/vllm_omni/landscape.png
 
 # vLLM-Omni online serving
 vllm serve Alpha-VLLM/Lumina-Image-2.0 --omni --port 8091 \

@@ -1,6 +1,8 @@
 # Image-To-Image
 
-This example edits an input image with `Qwen/Qwen-Image-Edit` using the `image_edit.py` CLI.
+This example edits an input image with `Qwen/Qwen-Image-Edit` using the `image_edit.py` CLI. The same
+CLI also drives strength-based (SDEdit) image-to-image on text-to-image checkpoints such as
+`Tongyi-MAI/Z-Image-Turbo` and `Alpha-VLLM/Lumina-Image-2.0`.
 
 ## Local CLI Usage
 
@@ -38,6 +40,26 @@ python image_edit.py \
   --guidance-scale 1.0
 ```
 
+### Strength-Based Image-To-Image (Z-Image, Lumina-Image-2.0)
+
+Models without a dedicated editing checkpoint run image-to-image by re-noising the input image and
+denoising only the tail of the schedule (SDEdit). `--strength` selects how far back to re-noise, so
+it — not an edit instruction — is the main control:
+
+```bash
+python image_edit.py \
+  --model Alpha-VLLM/Lumina-Image-2.0 \
+  --image qwen-bear.png \
+  --prompt "A watercolour painting of the same scene, soft pastel colours" \
+  --strength 0.6 \
+  --num-inference-steps 30 \
+  --cfg-scale 4.0 \
+  --output output_lumina_i2i.png
+```
+
+The output resolution defaults to the input image's aspect ratio at roughly Lumina's native 1MP;
+pass `--height`/`--width` to override it.
+
 Key arguments:
 
 - `--model`: model name or path. Use `Qwen/Qwen-Image-Edit-2509` or later for multiple image support.
@@ -51,6 +73,6 @@ Key arguments:
 - `--vae-use-tiling`: enable VAE tiling for memory optimization.
 - `--cfg-parallel-size`: set it to 2 to enable CFG Parallel. See more examples in [`user_guide`](../../../docs/user_guide/diffusion/parallelism_acceleration.md#cfg-parallel).
 - `--enable-cpu-offload`: enable CPU offloading for diffusion models.
-- `--strength`: **Z-Image only** - controls the denoising start timestep for I2I (default: 0.6). Range: [0.0, 1.0]. Lower values preserve more of the original image; higher values allow more creative changes.
+- `--strength`: **Z-Image and Lumina-Image-2.0 only** - controls the denoising start timestep for I2I (default: 0.6). Range: [0.0, 1.0]. Lower values preserve more of the original image; higher values allow more creative changes. Ignored (with a warning) when no input image is given.
 
 > ℹ️ If you encounter OOM errors, try using `--vae-use-slicing` and `--vae-use-tiling` to reduce memory usage.

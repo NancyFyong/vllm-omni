@@ -268,7 +268,7 @@ class OmniDiffusionSamplingParams:
     guidance_scale_2: float | None = None
     guidance_scale_2_provided: bool = False
     guidance_rescale: float = 0.0
-    strength: float | None = None  # I2I: Z-Image specific now, uses to control denoising start timestep
+    strength: float | None = None  # I2I: Z-Image / Lumina-Image-2.0, controls the denoising start timestep
     decode_timestep: float | list[float] | None = None
     decode_noise_scale: float | list[float] | None = None
     eta: float = 0.0

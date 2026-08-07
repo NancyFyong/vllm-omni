@@ -4,6 +4,7 @@
 
 import inspect
 import json
+import math
 import os
 from collections.abc import Iterable
 from typing import ClassVar
@@ -17,6 +18,7 @@ from diffusers.schedulers.scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
 )
 from diffusers.utils.torch_utils import randn_tensor
+from PIL import Image
 from transformers import AutoModel, AutoTokenizer
 from vllm.logger import init_logger
 
@@ -28,6 +30,7 @@ from vllm_omni.diffusion.models.interface import SupportsComponentDiscovery
 from vllm_omni.diffusion.models.lumina_image2.lumina2_transformer import Lumina2Transformer2DModel
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
+from vllm_omni.diffusion.utils.size_utils import normalize_min_aligned_size
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch, split_diffusion_output_by_request
 from vllm_omni.model_executor.model_loader.weight_utils import download_weights_from_hf_specific
@@ -118,11 +121,17 @@ class Lumina2Pipeline(
     DiffusionPipelineProfilerMixin,
     SupportsComponentDiscovery,
 ):
-    """Text-to-image pipeline for Lumina-Image-2.0 (Next-DiT).
+    """Text-to-image and image-to-image pipeline for Lumina-Image-2.0 (Next-DiT).
 
     Gemma2 text encoder + AutoencoderKL VAE + Lumina2Transformer2DModel with a
     FlowMatchEulerDiscreteScheduler, ported from the diffusers ``Lumina2Pipeline``
     onto the vLLM-Omni diffusion runtime.
+
+    A request carrying ``multi_modal_data["image"]`` takes the image-to-image
+    path. Lumina-Image-2.0 ships no editing checkpoint, so image-to-image runs
+    SDEdit-style on the same weights: the input image is VAE-encoded, re-noised
+    at the sigma selected by ``strength``, and only the tail of the schedule is
+    denoised. Requests without an image are unaffected.
     """
 
     # Component discovery for parallelism / CPU-offload placement.
@@ -268,7 +277,76 @@ class Lumina2Pipeline(
         prompt_attention_mask = prompt_attention_mask.view(batch_size * num_images_per_prompt, -1)
         return prompt_embeds, prompt_attention_mask
 
-    def prepare_latents(self, batch_size, num_channels_latents, height, width, dtype, device, generator, latents=None):
+    def _collect_input_images(self, req: DiffusionRequestBatch) -> list[Image.Image | None]:
+        """One input image per request, or ``None`` where the request has none.
+
+        Requests are plain strings (text-to-image) or dicts that may carry
+        ``multi_modal_data["image"]``. SDEdit conditions on exactly one image, so
+        a multi-image request is rejected rather than silently truncated.
+        """
+        images: list[Image.Image | None] = []
+        for prompt in req.prompts:
+            raw = None if isinstance(prompt, str) else (prompt.get("multi_modal_data") or {}).get("image")
+            if raw is None:
+                images.append(None)
+                continue
+            if isinstance(raw, list):
+                if len(raw) != 1:
+                    raise ValueError(
+                        "Lumina-Image-2.0 image-to-image conditions on exactly one input image, "
+                        f"but a request supplied {len(raw)}."
+                    )
+                raw = raw[0]
+            image = Image.open(raw) if isinstance(raw, str) else raw
+            images.append(image.convert("RGB"))
+        return images
+
+    def _derive_i2i_size(self, image: Image.Image) -> tuple[int, int]:
+        """Aspect-preserving output size at the model's native pixel budget.
+
+        Used when an image-to-image request gives no explicit height/width: the
+        input's aspect ratio is kept while the area is scaled to the resolution
+        the transformer was trained at (``sample_size`` latent tokens per side),
+        then floored to the patchify alignment.
+        """
+        src_width, src_height = image.size
+        if src_width <= 0 or src_height <= 0:
+            raise ValueError(f"Input image must have positive dimensions, got {src_width}x{src_height}.")
+
+        target_pixels = (self.default_sample_size * self.vae_scale_factor) ** 2
+        scale = math.sqrt(target_pixels / (src_width * src_height))
+        return normalize_min_aligned_size(
+            round(src_height * scale),
+            round(src_width * scale),
+            self.vae_scale_factor * 2,
+        )
+
+    def get_timesteps(self, num_inference_steps: int, strength: float) -> tuple[torch.Tensor, int]:
+        """Slice the schedule down to the tail selected by ``strength``.
+
+        ``set_begin_index`` is what makes the slice usable: both ``scale_noise``
+        and ``step`` look up sigmas by step index, so the scheduler has to start
+        counting at the offset the returned timesteps start at.
+        """
+        init_timestep = min(num_inference_steps * strength, num_inference_steps)
+        t_start = int(max(num_inference_steps - init_timestep, 0))
+        timesteps = self.scheduler.timesteps[t_start * self.scheduler.order :]
+        self.scheduler.set_begin_index(t_start * self.scheduler.order)
+        return timesteps, num_inference_steps - t_start
+
+    def prepare_latents(
+        self,
+        batch_size,
+        num_channels_latents,
+        height,
+        width,
+        dtype,
+        device,
+        generator,
+        latents=None,
+        image=None,
+        timestep=None,
+    ):
         # VAE applies 8x compression but latent height/width must be divisible by
         # 2 to allow patchifying, hence the (vae_scale_factor * 2) factor.
         height = 2 * (int(height) // (self.vae_scale_factor * 2))
@@ -280,22 +358,72 @@ class Lumina2Pipeline(
                 f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
                 f" size of {batch_size}. Make sure the batch size matches the length of the generators."
             )
+        if image is not None:
+            return self._prepare_image_latents(image, shape, timestep, dtype, device, generator)
         if latents is None:
             latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
         else:
             latents = latents.to(device)
         return latents
 
+    def _prepare_image_latents(
+        self,
+        image: torch.Tensor,
+        shape: tuple[int, int, int, int],
+        timestep: torch.Tensor,
+        dtype: torch.dtype,
+        device: torch.device,
+        generator: torch.Generator | list[torch.Generator] | None,
+    ) -> torch.Tensor:
+        """VAE-encode the preprocessed images and re-noise them at ``timestep``.
+
+        ``image`` holds one row per request; each row is expanded to that
+        request's ``num_outputs_per_prompt`` latents with ``repeat_interleave``,
+        matching the request-contiguous layout that ``encode_prompt`` and
+        ``split_diffusion_output_by_request`` both assume.
+        """
+        batch_size = shape[0]
+        image = image.to(device=device, dtype=dtype)
+        num_input_images = image.shape[0]
+        if num_input_images == 0 or batch_size % num_input_images != 0:
+            raise ValueError(f"Cannot expand {num_input_images} input image(s) to an effective batch of {batch_size}.")
+        outputs_per_image = batch_size // num_input_images
+
+        if isinstance(generator, list):
+            # Each request's first generator seeds its VAE sample, so the sample
+            # is shared by that request's outputs and they diverge only through
+            # the noise injected below.
+            image_latents = torch.cat(
+                [
+                    self.vae.encode(image[idx : idx + 1]).latent_dist.sample(generator[idx * outputs_per_image])
+                    for idx in range(num_input_images)
+                ],
+                dim=0,
+            )
+        else:
+            image_latents = self.vae.encode(image).latent_dist.sample(generator)
+
+        # Exact inverse of the decode-side denormalization in ``forward``.
+        image_latents = (image_latents - self.vae.config.shift_factor) * self.vae.config.scaling_factor
+        image_latents = image_latents.repeat_interleave(outputs_per_image, dim=0)
+        if tuple(image_latents.shape) != tuple(shape):
+            raise ValueError(f"Encoded image latents have shape {tuple(image_latents.shape)}, expected {tuple(shape)}.")
+
+        noise = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+        return self.scheduler.scale_noise(image_latents, timestep, noise)
+
     def _resolve_batch_params(
         self,
         req: DiffusionRequestBatch,
         *,
+        images: list[Image.Image | None],
         height: int,
         width: int,
         num_inference_steps: int,
         guidance_scale: float,
         num_images_per_prompt: int,
-    ) -> tuple[int, int, int, float, int]:
+        strength: float,
+    ) -> tuple[int, int, int, float, int, float | None, bool]:
         """Resolve the shared sampling params for a fused request batch.
 
         Requests fused into one denoise pass must share the tensor-shaping and
@@ -304,35 +432,65 @@ class Lumina2Pipeline(
         a single scheduler timestep schedule cannot represent them. We resolve
         each value from the first request and reject any request that disagrees,
         rather than silently generating wrong images for the others.
+
+        ``strength`` and whether a request carries an input image join that
+        contract for the same reason: both pick which slice of the schedule is
+        denoised. When an image-to-image request gives no explicit size, the size
+        is derived from its input image, so batching two images of different
+        aspect ratios is rejected here instead of silently resizing one of them.
         """
         sampling_list = req.sampling_params_list
-        common = sampling_list[0]
-        r_height = common.height or height
-        r_width = common.width or width
-        r_steps = common.num_inference_steps or num_inference_steps
-        r_guidance = common.guidance_scale if common.guidance_scale_provided else guidance_scale
-        r_num_images = common.num_outputs_per_prompt if common.num_outputs_per_prompt > 0 else num_images_per_prompt
+        resolved = [
+            self._resolve_request_params(
+                sp,
+                image,
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                num_images_per_prompt=num_images_per_prompt,
+                strength=strength,
+            )
+            for sp, image in zip(sampling_list, images, strict=True)
+        ]
 
-        for idx, sp in enumerate(sampling_list[1:], start=1):
-            sp_height = sp.height or height
-            sp_width = sp.width or width
-            sp_steps = sp.num_inference_steps or num_inference_steps
-            sp_guidance = sp.guidance_scale if sp.guidance_scale_provided else guidance_scale
-            sp_num_images = sp.num_outputs_per_prompt if sp.num_outputs_per_prompt > 0 else num_images_per_prompt
-            if (sp_height, sp_width, sp_steps, sp_guidance, sp_num_images) != (
-                r_height,
-                r_width,
-                r_steps,
-                r_guidance,
-                r_num_images,
-            ):
+        common = resolved[0]
+        for idx, candidate in enumerate(resolved[1:], start=1):
+            if candidate != common:
                 raise ValueError(
                     "Batched Lumina-Image-2.0 requests must share height, width, num_inference_steps, "
-                    "guidance_scale, and num_outputs_per_prompt to be fused into one denoise pass; "
-                    f"request 0 has {(r_height, r_width, r_steps, r_guidance, r_num_images)} but request "
-                    f"{idx} has {(sp_height, sp_width, sp_steps, sp_guidance, sp_num_images)}."
+                    "guidance_scale, num_outputs_per_prompt, strength, and input-image presence to be "
+                    f"fused into one denoise pass; request 0 has {common} but request {idx} has {candidate}."
                 )
-        return r_height, r_width, r_steps, r_guidance, r_num_images
+        return common
+
+    def _resolve_request_params(
+        self,
+        sp,
+        image: Image.Image | None,
+        *,
+        height: int,
+        width: int,
+        num_inference_steps: int,
+        guidance_scale: float,
+        num_images_per_prompt: int,
+        strength: float,
+    ) -> tuple[int, int, int, float, int, float | None, bool]:
+        if image is not None and sp.height is None and sp.width is None:
+            default_height, default_width = self._derive_i2i_size(image)
+        else:
+            default_height, default_width = height, width
+        return (
+            sp.height or default_height,
+            sp.width or default_width,
+            sp.num_inference_steps or num_inference_steps,
+            sp.guidance_scale if sp.guidance_scale_provided else guidance_scale,
+            sp.num_outputs_per_prompt if sp.num_outputs_per_prompt > 0 else num_images_per_prompt,
+            # ``strength`` is meaningless without an input image, so it stays out
+            # of the homogeneity contract for text-to-image requests.
+            None if image is None else (strength if sp.strength is None else sp.strength),
+            image is not None,
+        )
 
     def forward(
         self,
@@ -345,6 +503,7 @@ class Lumina2Pipeline(
         num_images_per_prompt: int = 1,
         generator: torch.Generator | None = None,
         sigmas: list[float] | None = None,
+        strength: float = 0.6,
         cfg_trunc_ratio: float = 1.0,
         cfg_normalization: bool = True,
         max_sequence_length: int = 256,
@@ -362,14 +521,36 @@ class Lumina2Pipeline(
                 prompts.append(item.get("prompt") or "")
                 negative_prompts.append(item.get("negative_prompt") or negative_prompt)
 
-        height, width, num_inference_steps, guidance_scale, num_images_per_prompt = self._resolve_batch_params(
+        input_images = self._collect_input_images(req)
+        (
+            height,
+            width,
+            num_inference_steps,
+            guidance_scale,
+            num_images_per_prompt,
+            strength,
+            is_img2img,
+        ) = self._resolve_batch_params(
             req,
+            images=input_images,
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
             num_images_per_prompt=num_images_per_prompt,
+            strength=strength,
         )
+        if is_img2img:
+            if not 0.0 <= strength <= 1.0:
+                raise ValueError(f"The value of strength should be in [0.0, 1.0] but is {strength}")
+        else:
+            ignored_strengths = [sp.strength for sp in req.sampling_params_list if sp.strength is not None]
+            if ignored_strengths:
+                logger.warning(
+                    "strength (%s) only applies to image-to-image generation and is ignored for this "
+                    "text-to-image request.",
+                    ignored_strengths[0],
+                )
         # Per-request generators (one seed per request, expanded by
         # num_images_per_prompt) so batching is numerically request-local.
         generator = req.collate_request_generators(num_images_per_prompt, generator)
@@ -401,23 +582,15 @@ class Lumina2Pipeline(
                 max_sequence_length=max_sequence_length,
             )
 
-        # 4. Prepare latents
+        # 4. Prepare timesteps
         latent_channels = self.transformer.config.in_channels
-        latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            latent_channels,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-        )
-
-        # 5. Prepare timesteps
         sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps) if sigmas is None else sigmas
-        image_seq_len = latents.shape[1]
+        # Upstream diffusers passes ``latents.shape[1]`` here, which for Lumina's
+        # 4D (B, C, H, W) latents is the channel count and not a sequence length.
+        # Reading it from the config is that same value, and it lets the
+        # image-to-image path resolve the schedule before the latents exist.
         mu = calculate_shift(
-            image_seq_len,
+            latent_channels,
             self.scheduler.config.get("base_image_seq_len", 256),
             self.scheduler.config.get("max_image_seq_len", 4096),
             self.scheduler.config.get("base_shift", 0.5),
@@ -430,6 +603,43 @@ class Lumina2Pipeline(
             sigmas=sigmas,
             mu=mu,
         )
+
+        # 5. Prepare latents — pure noise for text-to-image, or the re-noised
+        # input image for image-to-image.
+        if is_img2img:
+            timesteps, num_inference_steps = self.get_timesteps(num_inference_steps, strength)
+            if num_inference_steps < 1:
+                raise ValueError(
+                    f"After adjusting num_inference_steps by strength {strength}, the number of pipeline "
+                    f"steps is {num_inference_steps}, which is < 1 and not appropriate for this pipeline."
+                )
+            latent_timestep = timesteps[:1].repeat(batch_size * num_images_per_prompt)
+            image_tensor = torch.cat(
+                [self.image_processor.preprocess(image, height=height, width=width) for image in input_images],
+                dim=0,
+            )
+            latents = self.prepare_latents(
+                batch_size * num_images_per_prompt,
+                latent_channels,
+                height,
+                width,
+                prompt_embeds.dtype,
+                device,
+                generator,
+                image=image_tensor,
+                timestep=latent_timestep,
+            )
+        else:
+            latents = self.prepare_latents(
+                batch_size * num_images_per_prompt,
+                latent_channels,
+                height,
+                width,
+                prompt_embeds.dtype,
+                device,
+                generator,
+            )
+
         num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
         self._num_timesteps = len(timesteps)
 
