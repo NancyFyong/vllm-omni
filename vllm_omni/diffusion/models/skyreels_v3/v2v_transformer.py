@@ -161,9 +161,10 @@ def rope_apply(
 
 
 def fast_rms_norm(x, weight, eps):
+    input_dtype = x.dtype
     x = x.float()
     x = x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + eps)
-    x = x.type_as(x) * weight
+    x = x.to(input_dtype) * weight
     return x
 
 
@@ -194,7 +195,19 @@ class WanLayerNorm(nn.LayerNorm):
         Args:
             x(Tensor): Shape [B, L, C]
         """
-        return super().forward(x)
+        weight = self.weight
+        bias = self.bias
+        if weight is not None and weight.dtype != x.dtype:
+            weight = weight.to(x.dtype)
+        if bias is not None and bias.dtype != x.dtype:
+            bias = bias.to(x.dtype)
+        return torch.nn.functional.layer_norm(
+            x,
+            self.normalized_shape,
+            weight,
+            bias,
+            self.eps,
+        )
 
 
 class WanSelfAttention(nn.Module):
@@ -280,6 +293,8 @@ class WanT2VCrossAttention(WanSelfAttention):
             context(Tensor): Shape [B, L2, C]
             context_lens(Tensor): Shape [B]
         """
+        x = x.to(self.q.weight.dtype)
+        context = context.to(self.k.weight.dtype)
         b, n, d = x.size(0), self.num_heads, self.head_dim
 
         # compute query, key, value
@@ -312,6 +327,8 @@ class WanI2VCrossAttention(WanSelfAttention):
             context(Tensor): Shape [B, L2, C]
             context_lens(Tensor): Shape [B]
         """
+        x = x.to(self.q.weight.dtype)
+        context = context.to(self.k.weight.dtype)
         context_img = context[:, :257]
         context = context[:, 257:]
         b, n, d = x.size(0), self.num_heads, self.head_dim
@@ -443,7 +460,7 @@ class WanAttentionBlock(nn.Module):
             y = self.ffn(
                 mul_add_add(
                     self.norm2(x).unflatten(1, (-1, expand_rate)), e[4], e[3]
-                ).flatten(1, 2)
+                ).flatten(1, 2).to(self.ffn[0].weight.dtype)
             )
             with amp.autocast("cuda", dtype=torch.float32):
                 x = mul_add(
@@ -487,7 +504,7 @@ class Head(nn.Module):
         x = self.head(
             mul_add_add(
                 self.norm(x).unflatten(1, (-1, expand_rate)), e[1], e[0]
-            ).flatten(1, 2)
+            ).flatten(1, 2).to(self.head.weight.dtype)
         )
 
         return x

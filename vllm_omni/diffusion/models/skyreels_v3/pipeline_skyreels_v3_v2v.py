@@ -423,10 +423,12 @@ class SkyReelsV3V2VPipeline(
         *,
         block_offload: bool = False,
     ) -> torch.Tensor:
+        transformer_dtype = self.transformer.patch_embedding.weight.dtype
+        transformer_device = self.transformer.patch_embedding.weight.device
         noise_pred = self.transformer(
-            latent_model_input,
-            t=timestep,
-            context=context,
+            latent_model_input.to(device=transformer_device, dtype=transformer_dtype),
+            t=timestep.to(device=transformer_device),
+            context=context.to(device=transformer_device, dtype=transformer_dtype),
             block_offload=block_offload,
         )
         if isinstance(noise_pred, tuple):
@@ -492,7 +494,7 @@ class SkyReelsV3V2VPipeline(
                         block_offload=block_offload,
                     )
 
-                noise_pred = noise_pred[:, -latents.shape[1] :]
+                noise_pred = noise_pred[:, -latents.shape[1] :].to(dtype=latents.dtype)
                 latents = self.scheduler.step(
                     noise_pred.unsqueeze(0),
                     timestep,
