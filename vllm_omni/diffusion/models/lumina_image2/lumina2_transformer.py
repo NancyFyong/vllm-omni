@@ -480,24 +480,19 @@ class Lumina2Transformer2DModel(nn.Module):
     _hsdp_shard_conditions = [_is_lumina_transformer_block]
     # LoRA / fused-projection metadata for the tensor-parallel QKV.
     packed_modules_mapping = {"to_qkv": ["to_q", "to_k", "to_v"]}
-    # Cache-DiT wraps the main ``layers`` stack. These blocks are single-stream
-    # (joint ``[caption; image]`` sequence in, single tensor out) with extra
-    # positional args (attention_mask/rotary/temb), matching ForwardPattern.Pattern_3;
-    # signature introspection is disabled because of those positional args. Lumina
-    # runs conditional and unconditional passes as separate transformer invocations
-    # (has_separate_cfg) so each branch keeps its own residual cache.
+    # Cache-DiT over ``layers``: single-stream Pattern_3 (positional
+    # attention_mask/rotary/temb, so introspection is off); separate cond/uncond
+    # passes (has_separate_cfg) keep per-branch residual caches.
     _cache_dit_adapter_config = CacheDiTAdapterConfig(
         block_forward_patterns={"layers": ForwardPattern.Pattern_3},
         has_separate_cfg=True,
         check_forward_pattern=False,
     )
-    # Ulysses sequence parallelism: shard the joint hidden states and per-position
-    # RoPE (the two outputs of ``unified_prepare``) along the sequence dim. The
-    # padding mask is deliberately NOT a module output — it is built full-length
-    # in ``forward`` so it is never sharded, keeping ``attn_mask``/query aligned
-    # after the Ulysses all-to-all. ``norm_out`` gathers the sequence back before
-    # unpatchify. Ring attention is unsupported with a mask, so this is
-    # Ulysses-only (``ring_degree=1``).
+    # Ulysses SP: shard the two ``unified_prepare`` outputs (joint hidden states
+    # and per-position RoPE) along the seq dim; ``norm_out`` gathers before
+    # unpatchify. The padding mask is NOT a module output — it is built
+    # full-length in ``forward`` so it stays aligned with the query after the
+    # all-to-all. Mask + Ring is unsupported, so Ulysses-only (``ring_degree=1``).
     _sp_plan = {
         "unified_prepare": {
             0: SequenceParallelInput(split_dim=1, expected_dims=3, split_output=True, auto_pad=True),
@@ -563,12 +558,10 @@ class Lumina2Transformer2DModel(nn.Module):
         )
 
         # 2. Noise and context refinement blocks
-        # These run on the full (un-sharded) caption/image sequences *before*
-        # ``unified_prepare`` assembles the joint stream, i.e. outside the
-        # ``_sp_plan`` sharded region. Under Ulysses SP they must NOT perform the
-        # sequence all-to-all (each rank processes the full sequence redundantly),
-        # so their attention is marked ``skip_sequence_parallel=True``. Only the
-        # main joint ``layers`` below operate on the SP-sharded sequence.
+        # These run on the full (un-sharded) sequences *before* ``unified_prepare``
+        # assembles the joint stream, i.e. outside the ``_sp_plan`` region, so under
+        # Ulysses SP they must skip the all-to-all (``skip_sequence_parallel=True``).
+        # Only the main joint ``layers`` operate on the SP-sharded sequence.
         self.noise_refiner = nn.ModuleList(
             [
                 Lumina2TransformerBlock(
@@ -671,23 +664,18 @@ class Lumina2Transformer2DModel(nn.Module):
             hidden_states = layer(hidden_states, None, noise_rotary_emb, temb)
 
         # 3. Joint Transformer blocks
-        # Under sequence parallelism the joint sequence must be padded to a
-        # multiple of the SP world size, and the (full-length) padding mask must
-        # be applied so the padded positions and post-all-to-all attention stay
-        # correct. With a single fixed-length prompt that already divides the SP
-        # world size this reduces to the original mask-free single-stream path
-        # (pad_size == 0, use_mask False), keeping the base path numerically
-        # unchanged.
+        # Under SP the joint sequence is padded to a multiple of the SP world size
+        # and a full-length padding mask applied. A single fixed-length prompt that
+        # already divides the world size reduces to the mask-free single-stream path
+        # (pad_size == 0, use_mask False), leaving the base path numerically unchanged.
         sp_size = _get_sequence_parallel_world_size_or_one()
         max_seq_len = max(seq_lengths)
         pad_size = (-max_seq_len) % sp_size
         padded_len = max_seq_len + pad_size
-        # Mask only when there is genuine padding: SP padding (pad_size > 0) or
-        # ragged batch (unequal seq_lengths). A uniform, already-divisible joint
-        # sequence needs no mask, so the fast no-mask flash path is used even
-        # under SP. The mask is a plain local tensor (NOT routed through the
-        # SP-sharded ``unified_prepare``) so it stays full-length to match the
-        # Ulysses post-all-to-all query.
+        # Mask only for genuine padding (SP pad_size > 0) or a ragged batch (unequal
+        # seq_lengths); otherwise take the fast no-mask flash path even under SP. The
+        # mask is a plain local tensor (NOT routed through the SP-sharded
+        # ``unified_prepare``) so it stays full-length to match the post-all-to-all query.
         use_mask = pad_size > 0 or len(set(seq_lengths)) > 1
         attention_mask = _build_joint_padding_mask(hidden_states, seq_lengths, padded_len) if use_mask else None
 
