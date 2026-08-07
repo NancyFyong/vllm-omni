@@ -104,8 +104,6 @@ def get_lumina2_post_process_func(od_config: OmniDiffusionConfig):
     image_processor = VaeImageProcessor(vae_scale_factor=vae_scale_factor * 2)
 
     def post_process_func(images: torch.Tensor):
-        # VaeImageProcessor.postprocess denormalizes [-1, 1] -> [0, 1] and
-        # converts to PIL (do_normalize defaults to True).
         return image_processor.postprocess(images)
 
     return post_process_func
@@ -125,16 +123,10 @@ class Lumina2Pipeline(
     onto the vLLM-Omni diffusion runtime.
     """
 
-    # Component discovery for parallelism / CPU-offload placement.
     _dit_modules: ClassVar[list[str]] = ["transformer"]
     _encoder_modules: ClassVar[list[str]] = ["text_encoder"]
     _vae_modules: ClassVar[list[str]] = ["vae"]
 
-    # Request-level batching: multiple independent requests are fused into a
-    # single denoise pass (see ``forward``). The Gemma text encoder pads every
-    # prompt to a fixed ``max_sequence_length`` (default 256), so per-request
-    # embeddings already share a sequence length and stack without ragged
-    # padding.
     supports_request_batch: ClassVar[bool] = True
 
     def __init__(
@@ -269,8 +261,6 @@ class Lumina2Pipeline(
         return prompt_embeds, prompt_attention_mask
 
     def prepare_latents(self, batch_size, num_channels_latents, height, width, dtype, device, generator, latents=None):
-        # VAE applies 8x compression but latent height/width must be divisible by
-        # 2 to allow patchifying, hence the (vae_scale_factor * 2) factor.
         height = 2 * (int(height) // (self.vae_scale_factor * 2))
         width = 2 * (int(width) // (self.vae_scale_factor * 2))
 
@@ -350,8 +340,6 @@ class Lumina2Pipeline(
         max_sequence_length: int = 256,
         output_type: str = "pil",
     ) -> list[DiffusionOutput]:
-        # Collect one prompt / negative prompt per request. Requests may be a
-        # plain string or a dict carrying its own negative prompt.
         prompts: list[str] = []
         negative_prompts: list[str] = []
         for item in req.prompts:
@@ -370,8 +358,6 @@ class Lumina2Pipeline(
             guidance_scale=guidance_scale,
             num_images_per_prompt=num_images_per_prompt,
         )
-        # Per-request generators (one seed per request, expanded by
-        # num_images_per_prompt) so batching is numerically request-local.
         generator = req.collate_request_generators(num_images_per_prompt, generator)
 
         if height % (self.vae_scale_factor * 2) != 0 or width % (self.vae_scale_factor * 2) != 0:
@@ -386,7 +372,6 @@ class Lumina2Pipeline(
         self._guidance_scale = guidance_scale
         self._current_timestep = None
 
-        # 3. Encode input prompts (batched: [B * num_images, seq, dim])
         prompt_embeds, prompt_attention_mask = self.encode_prompt(
             prompts,
             device,
@@ -401,7 +386,6 @@ class Lumina2Pipeline(
                 max_sequence_length=max_sequence_length,
             )
 
-        # 4. Prepare latents
         latent_channels = self.transformer.config.in_channels
         latents = self.prepare_latents(
             batch_size * num_images_per_prompt,
@@ -413,7 +397,6 @@ class Lumina2Pipeline(
             generator,
         )
 
-        # 5. Prepare timesteps
         sigmas = np.linspace(1.0, 1 / num_inference_steps, num_inference_steps) if sigmas is None else sigmas
         image_seq_len = latents.shape[1]
         mu = calculate_shift(
@@ -433,15 +416,11 @@ class Lumina2Pipeline(
         num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
         self._num_timesteps = len(timesteps)
 
-        # 6. Denoising loop
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
-                # compute whether apply classifier-free truncation on this timestep
                 do_classifier_free_truncation = (i + 1) / num_inference_steps > cfg_trunc_ratio
-                # reverse the timestep since Lumina uses t=0 as noise and t=1 as image
                 current_timestep = 1 - t / self.scheduler.config.num_train_timesteps
                 current_timestep = current_timestep.expand(latents.shape[0])
-                # CFG is disabled on late (truncated) timesteps regardless of scale.
                 do_true_cfg = self.do_classifier_free_guidance and not do_classifier_free_truncation
 
                 positive_kwargs = {
@@ -461,9 +440,6 @@ class Lumina2Pipeline(
                         "return_dict": False,
                     }
 
-                # predict_noise() negates the velocity; combine_cfg_noise() applies
-                # the affine CFG mix and (when cfg_normalize) the norm-rescale that
-                # matches Lumina's cfg_normalization.
                 noise_pred = self.predict_noise_maybe_with_cfg(
                     do_true_cfg=do_true_cfg,
                     true_cfg_scale=guidance_scale,
@@ -487,7 +463,6 @@ class Lumina2Pipeline(
                 output=images, stage_durations=self.stage_durations if hasattr(self, "stage_durations") else None
             )
 
-        # Split the fused batch back into one DiffusionOutput per request.
         return split_diffusion_output_by_request(
             result,
             req,

@@ -136,11 +136,6 @@ class Lumina2FeedForward(nn.Module):
         ffn_dim_multiplier: float | None = None,
     ) -> None:
         super().__init__()
-        # diffusers ``LuminaFeedForward`` does NOT apply the classic LLaMA 2/3
-        # SwiGLU reduction: it takes ``inner_dim`` (the block passes ``4 * dim``)
-        # as-is, optionally scales by ``ffn_dim_multiplier``, then rounds up to
-        # ``multiple_of``. Reproducing that exactly is required or the checkpoint
-        # FFN weights (shape ``4*dim``) get silently truncated.
         if ffn_dim_multiplier is not None:
             inner_dim = int(ffn_dim_multiplier * inner_dim)
         inner_dim = multiple_of * ((inner_dim + multiple_of - 1) // multiple_of)
@@ -150,8 +145,6 @@ class Lumina2FeedForward(nn.Module):
         self.linear_3 = ColumnParallelLinear(dim, inner_dim, bias=False, return_bias=False)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        # diffusers uses FP32SiLU (gate activation computed in fp32) — match it
-        # for bit-level parity rather than the bf16 ``F.silu``.
         gate = self.linear_1(hidden_states)
         gate = F.silu(gate.float()).to(gate.dtype)
         return self.linear_2(gate * self.linear_3(hidden_states))
@@ -182,8 +175,6 @@ class Lumina2Attention(nn.Module):
         self.head_dim = dim // num_attention_heads
         inner_dim = num_attention_heads * self.head_dim
 
-        # Fused, tensor-parallel QKV. GQA is expressed via total_num_kv_heads;
-        # the weight_loader replicates KV heads across ranks when tp > num_kv_heads.
         self.to_qkv = QKVParallelLinear(
             hidden_size=dim,
             head_size=self.head_dim,
@@ -191,12 +182,9 @@ class Lumina2Attention(nn.Module):
             total_num_kv_heads=num_kv_heads,
             bias=False,
         )
-        # Local head counts after tensor-parallel sharding.
         self.heads = self.to_qkv.num_heads
         self.kv_heads = self.to_qkv.num_kv_heads
 
-        # qk_norm="rms_norm" over the per-head dimension (elementwise affine).
-        # head_dim is tensor-parallel invariant, so these stay replicated.
         self.norm_q = RMSNorm(self.head_dim, eps=norm_eps, elementwise_affine=True)
         self.norm_k = RMSNorm(self.head_dim, eps=norm_eps, elementwise_affine=True)
 
@@ -241,11 +229,8 @@ class Lumina2Attention(nn.Module):
 
         attn_metadata = None
         if attention_mask is not None:
-            # vLLM-Omni flash-attn backend expects a 2D key-padding mask
-            # (batch_size, seq_len) where True marks valid tokens.
             attn_metadata = AttentionMetadata(attn_mask=attention_mask.bool())
 
-        # vLLM-Omni Attention handles GQA (num_kv_heads) internally.
         hidden_states = self.attn(query, key, value, attn_metadata)
         hidden_states = hidden_states.flatten(2, 3).to(dtype)
 
@@ -362,15 +347,12 @@ class Lumina2RotaryPosEmbed(nn.Module):
         seq_lengths = [cap_seq_len + image_seq_len for cap_seq_len in l_effective_cap_len]
         max_seq_len = max(seq_lengths)
 
-        # Create position IDs
         position_ids = torch.zeros(batch_size, max_seq_len, 3, dtype=torch.int32, device=device)
 
         for i, (cap_seq_len, seq_len) in enumerate(zip(l_effective_cap_len, seq_lengths)):
-            # add caption position ids
             position_ids[i, :cap_seq_len, 0] = torch.arange(cap_seq_len, dtype=torch.int32, device=device)
             position_ids[i, cap_seq_len:seq_len, 0] = cap_seq_len
 
-            # add image position ids
             row_ids = (
                 torch.arange(post_patch_height, dtype=torch.int32, device=device)
                 .view(-1, 1)
@@ -386,10 +368,8 @@ class Lumina2RotaryPosEmbed(nn.Module):
             position_ids[i, cap_seq_len:seq_len, 1] = row_ids
             position_ids[i, cap_seq_len:seq_len, 2] = col_ids
 
-        # Get combined rotary embeddings
         freqs_cis = self._get_freqs_cis(position_ids)
 
-        # create separate rotary embeddings for captions and images
         cap_freqs_cis = torch.zeros(
             batch_size, encoder_seq_len, freqs_cis.shape[-1], device=device, dtype=freqs_cis.dtype
         )
@@ -401,7 +381,6 @@ class Lumina2RotaryPosEmbed(nn.Module):
             cap_freqs_cis[i, :cap_seq_len] = freqs_cis[i, :cap_seq_len]
             img_freqs_cis[i, :image_seq_len] = freqs_cis[i, cap_seq_len:seq_len]
 
-        # image patch embeddings
         hidden_states = (
             hidden_states.view(batch_size, channels, post_patch_height, p, post_patch_width, p)
             .permute(0, 2, 4, 3, 5, 1)
@@ -453,10 +432,6 @@ class Lumina2JointPrepare(nn.Module):
         sp_size = _get_sequence_parallel_world_size_or_one()
         pad_size = (-max_seq_len) % sp_size
         if pad_size:
-            # Pad the sequence dim (dim 1) so it is divisible by the SP world size.
-            # The RoPE tensor is complex (freqs_cis); zero padding is a no-op for
-            # the padded (masked-out) positions. The matching full-length mask
-            # built in ``forward`` keeps the pad tokens out of attention.
             joint_hidden_states = F.pad(joint_hidden_states, (0, 0, 0, pad_size))
             rotary_emb = F.pad(rotary_emb, (0, 0, 0, pad_size))
 
@@ -476,23 +451,13 @@ class Lumina2Transformer2DModel(nn.Module):
     _no_split_modules = ["Lumina2TransformerBlock"]
     _repeated_blocks = ["Lumina2TransformerBlock"]
     _layerwise_offload_blocks_attrs = ["layers"]
-    # HSDP: shard the deep ``layers`` stack (small refiner stacks stay replicated).
     _hsdp_shard_conditions = [_is_lumina_transformer_block]
-    # LoRA / fused-projection metadata for the tensor-parallel QKV.
     packed_modules_mapping = {"to_qkv": ["to_q", "to_k", "to_v"]}
-    # Cache-DiT over ``layers``: single-stream Pattern_3 (positional
-    # attention_mask/rotary/temb, so introspection is off); separate cond/uncond
-    # passes (has_separate_cfg) keep per-branch residual caches.
     _cache_dit_adapter_config = CacheDiTAdapterConfig(
         block_forward_patterns={"layers": ForwardPattern.Pattern_3},
         has_separate_cfg=True,
         check_forward_pattern=False,
     )
-    # Ulysses SP: shard the two ``unified_prepare`` outputs (joint hidden states
-    # and per-position RoPE) along the seq dim; ``norm_out`` gathers before
-    # unpatchify. The padding mask is NOT a module output — it is built
-    # full-length in ``forward`` so it stays aligned with the query after the
-    # all-to-all. Mask + Ring is unsupported, so Ulysses-only (``ring_degree=1``).
     _sp_plan = {
         "unified_prepare": {
             0: SequenceParallelInput(split_dim=1, expected_dims=3, split_output=True, auto_pad=True),
@@ -526,7 +491,6 @@ class Lumina2Transformer2DModel(nn.Module):
         self.out_channels = out_channels or in_channels
         self.patch_size = patch_size
 
-        # Config namespace consumed by the pipeline (in_channels, sample_size, ...).
         self.config = SimpleNamespace(
             sample_size=sample_size,
             patch_size=patch_size,
@@ -546,7 +510,6 @@ class Lumina2Transformer2DModel(nn.Module):
             cap_feat_dim=cap_feat_dim,
         )
 
-        # 1. Positional, patch & conditional embeddings
         self.rope_embedder = Lumina2RotaryPosEmbed(
             theta=10000, axes_dim=axes_dim_rope, axes_lens=axes_lens, patch_size=patch_size
         )
@@ -557,11 +520,6 @@ class Lumina2Transformer2DModel(nn.Module):
             hidden_size=hidden_size, cap_feat_dim=cap_feat_dim, norm_eps=norm_eps
         )
 
-        # 2. Noise and context refinement blocks
-        # These run on the full (un-sharded) sequences *before* ``unified_prepare``
-        # assembles the joint stream, i.e. outside the ``_sp_plan`` region, so under
-        # Ulysses SP they must skip the all-to-all (``skip_sequence_parallel=True``).
-        # Only the main joint ``layers`` operate on the SP-sharded sequence.
         self.noise_refiner = nn.ModuleList(
             [
                 Lumina2TransformerBlock(
@@ -594,7 +552,6 @@ class Lumina2Transformer2DModel(nn.Module):
             ]
         )
 
-        # 3. Transformer blocks
         self.layers = nn.ModuleList(
             [
                 Lumina2TransformerBlock(
@@ -610,11 +567,8 @@ class Lumina2Transformer2DModel(nn.Module):
             ]
         )
 
-        # 3b. Joint-sequence assembly as a module boundary so ``_sp_plan`` can
-        # shard its outputs for Ulysses sequence parallelism (holds no params).
         self.unified_prepare = Lumina2JointPrepare()
 
-        # 4. Output norm & projection
         self.norm_out = LuminaLayerNormContinuous(
             embedding_dim=hidden_size,
             conditioning_embedding_dim=min(hidden_size, 1024),
@@ -640,7 +594,6 @@ class Lumina2Transformer2DModel(nn.Module):
         encoder_attention_mask: torch.Tensor,
         return_dict: bool = True,
     ) -> torch.Tensor | Transformer2DModelOutput:
-        # 1. Condition, positional & patch embedding
         batch_size, _, height, width = hidden_states.shape
 
         temb, encoder_hidden_states = self.time_caption_embed(hidden_states, timestep, encoder_hidden_states)
@@ -656,31 +609,19 @@ class Lumina2Transformer2DModel(nn.Module):
 
         hidden_states = self.x_embedder(hidden_states)
 
-        # 2. Context & noise refinement
         for layer in self.context_refiner:
             encoder_hidden_states = layer(encoder_hidden_states, encoder_attention_mask, context_rotary_emb)
 
         for layer in self.noise_refiner:
             hidden_states = layer(hidden_states, None, noise_rotary_emb, temb)
 
-        # 3. Joint Transformer blocks
-        # Under SP the joint sequence is padded to a multiple of the SP world size
-        # and a full-length padding mask applied. A single fixed-length prompt that
-        # already divides the world size reduces to the mask-free single-stream path
-        # (pad_size == 0, use_mask False), leaving the base path numerically unchanged.
         sp_size = _get_sequence_parallel_world_size_or_one()
         max_seq_len = max(seq_lengths)
         pad_size = (-max_seq_len) % sp_size
         padded_len = max_seq_len + pad_size
-        # Mask only for genuine padding (SP pad_size > 0) or a ragged batch (unequal
-        # seq_lengths); otherwise take the fast no-mask flash path even under SP. The
-        # mask is a plain local tensor (NOT routed through the SP-sharded
-        # ``unified_prepare``) so it stays full-length to match the post-all-to-all query.
         use_mask = pad_size > 0 or len(set(seq_lengths)) > 1
         attention_mask = _build_joint_padding_mask(hidden_states, seq_lengths, padded_len) if use_mask else None
 
-        # ``unified_prepare`` assembles + pads the joint sequence; ``_sp_plan``
-        # shards its two outputs (hidden_states, rotary_emb) along the seq dim.
         hidden_states, rotary_emb = self.unified_prepare(
             hidden_states,
             encoder_hidden_states,
@@ -692,10 +633,8 @@ class Lumina2Transformer2DModel(nn.Module):
         for layer in self.layers:
             hidden_states = layer(hidden_states, attention_mask, rotary_emb, temb)
 
-        # 4. Output norm & projection
         hidden_states = self.norm_out(hidden_states, temb)
 
-        # 5. Unpatchify
         p = self.config.patch_size
         output = []
         for i, (encoder_seq_len, seq_len) in enumerate(zip(encoder_seq_lengths, seq_lengths)):
@@ -713,10 +652,7 @@ class Lumina2Transformer2DModel(nn.Module):
         return Transformer2DModelOutput(sample=output)
 
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
-        # Fuse the separate diffusers projections (``to_q``/``to_k``/``to_v``)
-        # into the tensor-parallel ``to_qkv``; ``to_out.0`` maps to ``to_out``.
         stacked_params_mapping = [
-            # (param_name, shard_name, shard_id)
             (".to_qkv", ".to_q", "q"),
             (".to_qkv", ".to_k", "k"),
             (".to_qkv", ".to_v", "v"),
