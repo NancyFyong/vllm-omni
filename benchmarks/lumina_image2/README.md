@@ -128,8 +128,36 @@ unchanged. See [../../examples/offline_inference/image_to_image/image_to_image.m
 
 No diffusers Lumina2 img2img pipeline exists, so a like-for-like external
 baseline is omitted; the numbers below characterize how the served pipeline
-behaves under concurrency and request-level batching, using the same official
-harness as the t2i request-batching numbers.
+behaves under concurrency, request-level batching, and the same
+parallelism/acceleration flags the t2i table uses, using the same official
+harness.
+
+### Parallelism / acceleration (vLLM-Omni serving, H20, i2i)
+
+Same axes as the t2i "Parallelism / acceleration" table (1024×1024, 30 steps,
+concurrency 1), plus **strength = 0.6** so the DiT sees ~18 residual steps
+after SDEdit re-noises the input.
+
+| Config | Latency mean (ms) | p99 (ms) | Throughput (qps) | Peak mem (MB) | Notes |
+|---|---|---|---|---|---|
+| base (1 GPU) | 6905 | 6927 | 0.14 | 14628 | reference |
+| TP=2 | 4203 | 4214 | 0.24 | 12488 | tensor parallel, **1.64×** |
+| SP=2 (Ulysses) | 4832 | 4847 | 0.21 | 14724 | sequence parallel, **1.43×** |
+| CFG=2 | 3707 | 3776 | 0.27 | 14722 | CFG-parallel, **1.86×** |
+| Cache-DiT | 4110 | 4189 | 0.24 | 14628 | 1 GPU + cache, **1.68×** |
+
+The speedups track the t2i table almost 1-to-1 — CFG=2 wins because it doubles
+the two prompt branches across cards, TP=2 wins because it splits the DiT
+weight/attention across cards, both close to their t2i ratios (i2i 1.86× /
+1.64× vs. t2i 1.88× / 1.67×). Cache-DiT drops from 1.99× on t2i to 1.68× on
+i2i because SDEdit runs fewer steps to cache across (~18 vs. 30). Ulysses
+tracks similarly (i2i 1.43× vs. t2i 1.53×).
+
+**TeaCache is not applicable** to Lumina2 today: `--cache-backend tea_cache`
+raises `KeyError: Cannot find coefficients for Lumina2Transformer2DModel`, and
+no rescaling coefficients have been fit upstream yet (supported so far: Flux,
+Qwen-Image, Z-Image, LongCat-Image, etc.). Cache-DiT is the applicable cache
+backend for now.
 
 ### Request-level batching (1 GPU, H20, i2i)
 
@@ -202,11 +230,17 @@ Peak Memory Max (MB):                    13812.00
 Reproduce (official harness, i2i configs committed alongside the t2i ones):
 
 ```bash
+# request-batch sweep (serial vs. max_num_seqs=4, concurrency 1/2/4)
 python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
     --test-config-file tests/dfx/perf/tests/test_lumina_image2_i2i_vllm_omni.json -s -v
 # forced full batch=4 (adds --request-batch-max-wait-ms 300):
 python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
     --test-config-file tests/dfx/perf/tests/test_lumina_image2_i2i_forcedbatch.json -s -v
+# parallelism / acceleration (base, Cache-DiT, and — with 2 visible GPUs — TP=2 / SP=2 / CFG=2):
+python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
+    --test-config-file tests/dfx/perf/tests/test_lumina_image2_i2i_accel_1gpu.json -s -v
+CUDA_VISIBLE_DEVICES=0,1 python -m pytest tests/dfx/perf/scripts/run_diffusion_benchmark.py \
+    --test-config-file tests/dfx/perf/tests/test_lumina_image2_i2i_accel_2gpu.json -s -v
 ```
 
 ## Reproduce

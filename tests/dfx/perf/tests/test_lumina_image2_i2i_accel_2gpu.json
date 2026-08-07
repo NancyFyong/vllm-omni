@@ -1,0 +1,89 @@
+[
+    {
+        "test_name": "test_lumina2_i2i_tp2",
+        "description": "Lumina-Image-2.0 i2i with tensor parallel size 2 (--tensor-parallel-size 2). Same 1024x1024, 30 steps, strength=0.6, concurrency 1 as the base row.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true,
+                "tensor-parallel-size": 2
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "i2i_1024x1024_steps30_strength0.6_tp2",
+                "dataset": "random",
+                "task": "i2i",
+                "width": 1024,
+                "height": 1024,
+                "num-inference-steps": 30,
+                "num-prompts": 4,
+                "max-concurrency": 1,
+                "warmup-requests": 1,
+                "warmup-concurrency": 1,
+                "warmup-num-inference-steps": 30,
+                "enable-negative-prompt": true,
+                "extra-body": {"strength": 0.6}
+            }
+        ]
+    },
+    {
+        "test_name": "test_lumina2_i2i_ulysses2",
+        "description": "Lumina-Image-2.0 i2i with Ulysses sequence parallel size 2 (--ulysses-degree 2). Same shape / strength as the base row.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true,
+                "ulysses-degree": 2
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "i2i_1024x1024_steps30_strength0.6_ulysses2",
+                "dataset": "random",
+                "task": "i2i",
+                "width": 1024,
+                "height": 1024,
+                "num-inference-steps": 30,
+                "num-prompts": 4,
+                "max-concurrency": 1,
+                "warmup-requests": 1,
+                "warmup-concurrency": 1,
+                "warmup-num-inference-steps": 30,
+                "enable-negative-prompt": true,
+                "extra-body": {"strength": 0.6}
+            }
+        ]
+    },
+    {
+        "test_name": "test_lumina2_i2i_cfg_parallel2",
+        "description": "Lumina-Image-2.0 i2i with CFG-parallel size 2 (--cfg-parallel-size 2). Positive and negative CFG branches run on separate GPUs. Same shape / strength as the base row.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true,
+                "cfg-parallel-size": 2
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "i2i_1024x1024_steps30_strength0.6_cfg2",
+                "dataset": "random",
+                "task": "i2i",
+                "width": 1024,
+                "height": 1024,
+                "num-inference-steps": 30,
+                "num-prompts": 4,
+                "max-concurrency": 1,
+                "warmup-requests": 1,
+                "warmup-concurrency": 1,
+                "warmup-num-inference-steps": 30,
+                "enable-negative-prompt": true,
+                "extra-body": {"strength": 0.6}
+            }
+        ]
+    }
+]

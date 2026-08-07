@@ -1,0 +1,59 @@
+[
+    {
+        "test_name": "test_lumina2_i2i_base_1gpu",
+        "description": "Lumina-Image-2.0 image-to-image single-GPU baseline at 1024x1024, 30 steps, strength=0.6, concurrency 1. Reference row for the i2i parallelism/acceleration sweep.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "i2i_1024x1024_steps30_strength0.6_base",
+                "dataset": "random",
+                "task": "i2i",
+                "width": 1024,
+                "height": 1024,
+                "num-inference-steps": 30,
+                "num-prompts": 4,
+                "max-concurrency": 1,
+                "warmup-requests": 1,
+                "warmup-concurrency": 1,
+                "warmup-num-inference-steps": 30,
+                "enable-negative-prompt": true,
+                "extra-body": {"strength": 0.6}
+            }
+        ]
+    },
+    {
+        "test_name": "test_lumina2_i2i_cache_dit_1gpu",
+        "description": "Lumina-Image-2.0 i2i with Cache-DiT (single-GPU, --cache-backend cache_dit). Same shape / strength as the base row.",
+        "server_type": "vllm-omni",
+        "server_params": {
+            "model": "Alpha-VLLM/Lumina-Image-2.0",
+            "serve_args": {
+                "enable-diffusion-pipeline-profiler": true,
+                "cache-backend": "cache_dit"
+            }
+        },
+        "benchmark_params": [
+            {
+                "name": "i2i_1024x1024_steps30_strength0.6_cache_dit",
+                "dataset": "random",
+                "task": "i2i",
+                "width": 1024,
+                "height": 1024,
+                "num-inference-steps": 30,
+                "num-prompts": 4,
+                "max-concurrency": 1,
+                "warmup-requests": 1,
+                "warmup-concurrency": 1,
+                "warmup-num-inference-steps": 30,
+                "enable-negative-prompt": true,
+                "extra-body": {"strength": 0.6}
+            }
+        ]
+    }
+]
