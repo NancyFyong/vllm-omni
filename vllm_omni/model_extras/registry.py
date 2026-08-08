@@ -187,6 +187,27 @@ def default_image_to_video_prompt(
     return default_image_to_image_prompt(prompt, negative_prompt, media_inputs["image"])
 
 
+def skyreels_v3_v2v_image_to_video_prompt(
+    prompt: str,
+    negative_prompt: str | None,
+    media_inputs: Mapping[str, Any],
+    height: int | None = None,
+    width: int | None = None,
+    num_frames: int | None = None,
+) -> dict[str, Any]:
+    del height, width, num_frames
+    unsupported = set(media_inputs) - {"video"}
+    if unsupported:
+        raise ValueError(f"SkyReels V3 V2V does not support media inputs: {sorted(unsupported)}.")
+    video = media_inputs.get("video")
+    if video is None:
+        raise ValueError("SkyReels V3 V2V requires --video (path to the input video to extend).")
+    result: dict[str, Any] = {"prompt": prompt, "multi_modal_data": {"video": video}}
+    if negative_prompt is not None:
+        result["negative_prompt"] = negative_prompt
+    return result
+
+
 _EXTRA_SPECS: dict[str, dict[str, Any]] = {
     "AudioXPipeline": {
         "extra_body_params": AUDIOX_EXTRA_BODY_PARAMS,
@@ -246,6 +267,7 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
     "SkyReelsV3V2VPipeline": {
         "extra_body_params": SKYREELS_V3_V2V_EXTRA_BODY_PARAMS,
         "extra_output_params": SKYREELS_V3_V2V_EXTRA_OUTPUT_PARAMS,
+        "image_to_video_prompt_builder": skyreels_v3_v2v_image_to_video_prompt,
     },
     "MammothModa2DiTPipeline": {
         "extra_body_params": MAMMOTHMODA2_PREVIEW_EXTRA_BODY_PARAMS,
