@@ -1,0 +1,15 @@
+.......                                                                  [100%]
+=============================== warnings summary ===============================
+../../../../../../../../workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+vllm_omni/__init__.py:19
+  /workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+  This typically happens in development mode before building.
+  Using fallback version 'dev'.
+    from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+--- Running Summary
+7 passed, 15 warnings in 19.02s

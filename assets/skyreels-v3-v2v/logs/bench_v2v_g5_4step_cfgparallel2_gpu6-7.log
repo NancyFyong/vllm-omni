@@ -1,0 +1,113 @@
+loading V2V pipeline from /workspace/models/SkyReels-V3-V2V-14B
+/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+INFO 08-07 23:03:26 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
+INFO 08-07 23:03:27 [patch.py:481] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
+loaded input video: (72, 720, 1364, 3) @ 24.0 fps
+INFO 08-07 23:03:48 [omni_base.py:183] [Omni] Initializing with model /workspace/models/SkyReels-V3-V2V-14B
+INFO 08-07 23:03:48 [async_omni_engine.py:175] [AsyncOmniEngine] Initializing with model /workspace/models/SkyReels-V3-V2V-14B
+INFO 08-07 23:03:48 [async_omni_engine.py:274] [AsyncOmniEngine] Launching Orchestrator thread with 1 stages
+INFO 08-07 23:03:48 [stage_utils.py:167] Stage 0 logical-to-physical device mapping: 0->6, 1->7
+INFO 08-07 23:03:48 [data.py:1746] Parsed attention config from DIFFUSION_ATTENTION_BACKEND 'FLASH_ATTN': default=AttentionSpec(backend='FLASH_ATTN', skip_softmax=None, quant=None, block_sparse=None), per_role={}
+INFO 08-07 23:03:49 [multiproc_executor.py:254] Starting server...
+/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+INFO 08-07 23:04:43 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
+INFO 08-07 23:04:43 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
+INFO 08-07 23:04:45 [patch.py:481] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
+INFO 08-07 23:04:45 [patch.py:481] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
+INFO 08-07 23:05:12 [diffusion_worker.py:819] Worker 0 created result MessageQueue
+INFO 08-07 23:05:12 [diffusion_worker.py:819] Worker 1 created result MessageQueue
+INFO 08-07 23:05:12 [scheduler.py:252] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 08-07 23:05:12 [vllm.py:1109] Asynchronous scheduling is enabled.
+INFO 08-07 23:05:12 [kernel.py:295] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+INFO 08-07 23:05:12 [diffusion_worker.py:303] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+INFO 08-07 23:05:12 [scheduler.py:252] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 08-07 23:05:12 [vllm.py:1109] Asynchronous scheduling is enabled.
+INFO 08-07 23:05:12 [kernel.py:295] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+INFO 08-07 23:05:12 [diffusion_worker.py:303] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+INFO 08-07 23:05:12 [diffusion_worker.py:315] Worker 1: Initialized device and distributed environment.
+INFO 08-07 23:05:12 [diffusion_worker.py:315] Worker 0: Initialized device and distributed environment.
+INFO 08-07 23:05:12 [parallel_state.py:634] Building SP subgroups from explicit sp_group_ranks (sp_size=1, ulysses=1, ring=1, use_ulysses_low=True).
+INFO 08-07 23:05:12 [parallel_state.py:676] SP group details for rank 1: sp_group=[1], ulysses_group=[1], ring_group=[1]
+INFO 08-07 23:05:12 [parallel_state.py:634] Building SP subgroups from explicit sp_group_ranks (sp_size=1, ulysses=1, ring=1, use_ulysses_low=True).
+INFO 08-07 23:05:12 [parallel_state.py:676] SP group details for rank 0: sp_group=[0], ulysses_group=[0], ring_group=[0]
+/workspace/vllm-omni/.venv/lib/python3.12/site-packages/diffusers/configuration_utils.py:282: FutureWarning: It is deprecated to pass a pretrained model name or path to `from_config`.If you were trying to load a model, please use <class 'vllm_omni.diffusion.models.skyreels_v3.v2v_transformer.WanModel'>.load_config(...) followed by <class 'vllm_omni.diffusion.models.skyreels_v3.v2v_transformer.WanModel'>.from_config(...) instead. Otherwise, please make sure to pass a configuration dictionary instead. This functionality will be removed in v1.0.0.
+  deprecate("config-passed-as-path", "1.0.0", deprecation_message, standard_warn=False)
+/workspace/vllm-omni/.venv/lib/python3.12/site-packages/diffusers/configuration_utils.py:282: FutureWarning: It is deprecated to pass a pretrained model name or path to `from_config`.If you were trying to load a model, please use <class 'vllm_omni.diffusion.models.skyreels_v3.v2v_transformer.WanModel'>.load_config(...) followed by <class 'vllm_omni.diffusion.models.skyreels_v3.v2v_transformer.WanModel'>.from_config(...) instead. Otherwise, please make sure to pass a configuration dictionary instead. This functionality will be removed in v1.0.0.
+  deprecate("config-passed-as-path", "1.0.0", deprecation_message, standard_warn=False)
+Multi-thread loading shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+Multi-thread loading shards: 100% Completed | 1/1 [00:03<00:00,  3.69s/it]
+Multi-thread loading shards: 100% Completed | 1/1 [00:03<00:00,  3.69s/it]
+
+INFO 08-07 23:07:37 [diffusers_loader.py:543] Loading weights took 4.53 seconds
+INFO 08-07 23:07:38 [diffusion_model_runner.py:242] Model loading took 37.7685 GiB and 144.987132 seconds
+INFO 08-07 23:07:38 [diffusion_model_runner.py:247] Model runner: Model loaded successfully.
+WARNING 08-07 23:07:38 [compile.py:51] Regional compilation skipped because the model does not define `_repeated_blocks`.
+INFO 08-07 23:07:38 [diffusion_model_runner.py:177] Model runner: transformer configured for lazy regional torch.compile with dynamic=True; compilation errors may surface on the first request.
+INFO 08-07 23:07:38 [diffusion_model_runner.py:324] Model runner: Initialization complete.
+INFO 08-07 23:07:38 [diffusion_worker.py:374] Worker 0: Process-scoped GPU memory after model loading: 0.00 GiB.
+INFO 08-07 23:07:38 [manager.py:96] Initializing DiffusionLoRAManager: device=cuda:0, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
+INFO 08-07 23:07:38 [diffusion_worker.py:258] Worker 0: Initialization complete.
+INFO 08-07 23:07:38 [diffusion_worker.py:1185] Worker 0: Scheduler loop started.
+INFO 08-07 23:07:38 [diffusion_worker.py:1031] Worker 0 ready to receive requests via shared memory
+INFO 08-07 23:07:39 [diffusion_model_runner.py:242] Model loading took 37.7685 GiB and 146.869423 seconds
+INFO 08-07 23:07:39 [diffusion_model_runner.py:247] Model runner: Model loaded successfully.
+WARNING 08-07 23:07:39 [compile.py:51] Regional compilation skipped because the model does not define `_repeated_blocks`.
+INFO 08-07 23:07:39 [diffusion_model_runner.py:177] Model runner: transformer configured for lazy regional torch.compile with dynamic=True; compilation errors may surface on the first request.
+INFO 08-07 23:07:39 [diffusion_model_runner.py:324] Model runner: Initialization complete.
+INFO 08-07 23:07:40 [diffusion_worker.py:374] Worker 1: Process-scoped GPU memory after model loading: 0.00 GiB.
+INFO 08-07 23:07:40 [manager.py:96] Initializing DiffusionLoRAManager: device=cuda:1, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
+INFO 08-07 23:07:40 [diffusion_worker.py:258] Worker 1: Initialization complete.
+INFO 08-07 23:07:40 [diffusion_worker.py:1185] Worker 1: Scheduler loop started.
+INFO 08-07 23:07:40 [diffusion_worker.py:1031] Worker 1 ready to receive requests via shared memory
+INFO 08-07 23:07:40 [multiproc_executor.py:703] Async result pump started
+INFO 08-07 23:07:40 [diffusion_engine.py:279] [RequestBatch] engine init max_num_seqs=1 max_wait_ms=0.0
+INFO 08-07 23:07:40 [diffusion_engine.py:865] Skipping dummy warmup run (num_frames=0)
+INFO 08-07 23:07:40 [inline_stage_diffusion_client.py:72] [InlineStageDiffusionClient] stage-0 [rep-0] initialized inline (batch_size=1)
+INFO 08-07 23:07:40 [stage_runtime.py:662] [StageRuntime] Stage 0 replica 0 initialized (diffusion, batch_size=1)
+INFO 08-07 23:07:40 [orchestrator.py:507] [Orchestrator] Starting event loop
+INFO 08-07 23:07:40 [async_omni_engine.py:306] [AsyncOmniEngine] Orchestrator ready with 1 stages
+INFO 08-07 23:07:40 [omni_base.py:201] [Omni] AsyncOmniEngine initialized in 232.08 seconds
+INFO 08-07 23:07:40 [omni_base.py:221] [Omni] Initialized with 1 stages for model /workspace/models/SkyReels-V3-V2V-14B
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s]  0%|          | 0/4 [00:00<?, ?it/s] 25%|██▌       | 1/4 [06:58<20:54, 418.00s/it] 50%|█████     | 2/4 [13:55<13:55, 417.99s/it] 75%|███████▌  | 3/4 [20:54<06:58, 418.01s/it]100%|██████████| 4/4 [27:52<00:00, 418.07s/it]100%|██████████| 4/4 [27:52<00:00, 418.05s/it]
+Processed prompts: 100%|██████████| 1/1 [28:29<00:00, 1709.16s/it]Processed prompts: 100%|██████████| 1/1 [28:29<00:00, 1709.16s/it]
+generation done in 1709.17 s
+saved output: /workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/results/bench_v2v_g5_4step_cfgparallel2_2gpu.mp4  (shape=(132, 688, 1312, 3), fps=24.0)
+{
+  "elapsed_s": 1709.1664008945227,
+  "output_shape": [
+    132,
+    688,
+    1312,
+    3
+  ],
+  "output_fps": 24.0,
+  "prompt": "A cinematic continuation of the scene.",
+  "resolution": "720P",
+  "duration": 5,
+  "num_inference_steps": 4,
+  "seed": 42,
+  "guidance_scale": 5.0,
+  "cfg_parallel_size": 2
+}
+INFO 08-07 23:36:10 [async_omni_engine.py:1837] [AsyncOmniEngine] Shutting down Orchestrator
+INFO 08-07 23:36:10 [orchestrator.py:612] [Orchestrator] Received shutdown signal
+INFO 08-07 23:36:10 [orchestrator.py:2258] [Orchestrator] Shutting down all 1 client(s)
+INFO 08-07 23:36:10 [diffusion_worker.py:1117] Worker 0: Received shutdown message
+INFO 08-07 23:36:10 [diffusion_worker.py:1117] Worker 1: Received shutdown message
+INFO 08-07 23:36:10 [diffusion_worker.py:1138] event loop terminated.
+INFO 08-07 23:36:10 [diffusion_worker.py:1138] event loop terminated.
+INFO 08-07 23:36:10 [diffusion_worker.py:1208] Worker 0: Shutdown complete.
+INFO 08-07 23:36:10 [diffusion_worker.py:1208] Worker 1: Shutdown complete.
+INFO 08-07 23:36:13 [stage_pool.py:1237] [StagePool] Stage 0 replica 0 shut down
+/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 2 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

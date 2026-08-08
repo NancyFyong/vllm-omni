@@ -1,0 +1,302 @@
+/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+INFO 08-08 10:46:05 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
+INFO 08-08 10:46:07 [patch.py:481] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
+INFO 08-08 10:46:25 [omni_base.py:183] [Omni] Initializing with model /workspace/models/SkyReels-V3-V2V-14B
+INFO 08-08 10:46:25 [async_omni_engine.py:175] [AsyncOmniEngine] Initializing with model /workspace/models/SkyReels-V3-V2V-14B
+INFO 08-08 10:46:25 [async_omni_engine.py:274] [AsyncOmniEngine] Launching Orchestrator thread with 1 stages
+INFO 08-08 10:46:26 [stage_utils.py:167] Stage 0 logical-to-physical device mapping: 0->1
+INFO 08-08 10:46:26 [data.py:1746] Parsed attention config from DIFFUSION_ATTENTION_BACKEND 'FLASH_ATTN': default=AttentionSpec(backend='FLASH_ATTN', skip_softmax=None, quant=None, block_sparse=None), per_role={}
+INFO 08-08 10:46:26 [multiproc_executor.py:254] Starting server...
+/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+INFO 08-08 10:47:10 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
+INFO 08-08 10:47:12 [patch.py:481] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
+INFO 08-08 10:47:31 [diffusion_worker.py:819] Worker 0 created result MessageQueue
+INFO 08-08 10:47:31 [scheduler.py:252] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 08-08 10:47:31 [vllm.py:1109] Asynchronous scheduling is enabled.
+INFO 08-08 10:47:31 [kernel.py:295] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+INFO 08-08 10:47:31 [diffusion_worker.py:303] Final IR op priority after setting vLLM-Omni overrides: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'])
+INFO 08-08 10:47:31 [diffusion_worker.py:315] Worker 0: Initialized device and distributed environment.
+INFO 08-08 10:47:31 [parallel_state.py:634] Building SP subgroups from explicit sp_group_ranks (sp_size=1, ulysses=1, ring=1, use_ulysses_low=True).
+INFO 08-08 10:47:31 [parallel_state.py:676] SP group details for rank 0: sp_group=[0], ulysses_group=[0], ring_group=[0]
+/workspace/vllm-omni/.venv/lib/python3.12/site-packages/diffusers/configuration_utils.py:282: FutureWarning: It is deprecated to pass a pretrained model name or path to `from_config`.If you were trying to load a model, please use <class 'vllm_omni.diffusion.models.skyreels_v3.v2v_transformer.WanModel'>.load_config(...) followed by <class 'vllm_omni.diffusion.models.skyreels_v3.v2v_transformer.WanModel'>.from_config(...) instead. Otherwise, please make sure to pass a configuration dictionary instead. This functionality will be removed in v1.0.0.
+  deprecate("config-passed-as-path", "1.0.0", deprecation_message, standard_warn=False)
+Multi-thread loading shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+Multi-thread loading shards: 100% Completed | 1/1 [00:00<00:00,  2.84it/s]
+Multi-thread loading shards: 100% Completed | 1/1 [00:00<00:00,  2.84it/s]
+
+INFO 08-08 10:51:48 [diffusers_loader.py:543] Loading weights took 2.01 seconds
+INFO 08-08 10:51:50 [diffusion_model_runner.py:242] Model loading took 11.0764 GiB and 258.019841 seconds
+INFO 08-08 10:51:50 [diffusion_model_runner.py:247] Model runner: Model loaded successfully.
+INFO 08-08 10:51:50 [diffusion_model_runner.py:268]  Enabling offloader backend: ModelLevelOffloadBackend
+INFO 08-08 10:51:50 [sequential_backend.py:274] Model-level offloading enabled: transformer <-> text_encoder (mutual exclusion)
+WARNING 08-08 10:51:50 [compile.py:51] Regional compilation skipped because the model does not define `_repeated_blocks`.
+INFO 08-08 10:51:50 [diffusion_model_runner.py:177] Model runner: transformer configured for lazy regional torch.compile with dynamic=True; compilation errors may surface on the first request.
+INFO 08-08 10:51:50 [diffusion_model_runner.py:324] Model runner: Initialization complete.
+INFO 08-08 10:51:50 [diffusion_worker.py:374] Worker 0: Process-scoped GPU memory after model loading: 0.00 GiB.
+INFO 08-08 10:51:50 [manager.py:96] Initializing DiffusionLoRAManager: device=cuda:0, dtype=torch.bfloat16, max_cached_adapters=1, static_lora_path=None
+INFO 08-08 10:51:50 [diffusion_worker.py:258] Worker 0: Initialization complete.
+INFO 08-08 10:51:50 [diffusion_worker.py:1185] Worker 0: Scheduler loop started.
+INFO 08-08 10:51:50 [diffusion_worker.py:1031] Worker 0 ready to receive requests via shared memory
+INFO 08-08 10:51:50 [multiproc_executor.py:703] Async result pump started
+INFO 08-08 10:51:50 [diffusion_engine.py:279] [RequestBatch] engine init max_num_seqs=1 max_wait_ms=0.0
+INFO 08-08 10:51:50 [diffusion_engine.py:865] Skipping dummy warmup run (num_frames=0)
+INFO 08-08 10:51:50 [inline_stage_diffusion_client.py:72] [InlineStageDiffusionClient] stage-0 [rep-0] initialized inline (batch_size=1)
+INFO 08-08 10:51:50 [stage_runtime.py:662] [StageRuntime] Stage 0 replica 0 initialized (diffusion, batch_size=1)
+INFO 08-08 10:51:50 [orchestrator.py:507] [Orchestrator] Starting event loop
+INFO 08-08 10:51:50 [async_omni_engine.py:306] [AsyncOmniEngine] Orchestrator ready with 1 stages
+INFO 08-08 10:51:50 [omni_base.py:201] [Omni] AsyncOmniEngine initialized in 324.76 seconds
+INFO 08-08 10:51:50 [omni_base.py:221] [Omni] Initialized with 1 stages for model /workspace/models/SkyReels-V3-V2V-14B
+
+============================================================
+Generation Configuration:
+  Model: /workspace/models/SkyReels-V3-V2V-14B
+  Inference steps: 4
+  Frames: 81
+  Solver: unipc
+  diffusion_kv_cache_dtype(config): None
+  diffusion_kv_cache_skip_steps(config): None
+  diffusion_kv_cache_skip_layers(config): None
+  Parallel configuration: cfg_parallel_size=1, tensor_parallel_size=1, vae_patch_parallel_size=1, pipeline_parallel_size=1
+  Video size: NonexNone
+============================================================
+
+Processed prompts:   0%|          | 0/1 [00:00<?, ?it/s]  0%|          | 0/4 [00:00<?, ?it/s]  0%|          | 0/4 [00:06<?, ?it/s]
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399] Error executing method 'execute_model'. This might cause issues in distributed execution.
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399] Traceback (most recent call last):
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 1395, in execute_method
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return func(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 458, in execute_model
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     output = self.model_runner.execute_model(req, kv_prefetch_job=kv_prefetch_job)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 567, in execute_model
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     runner_output = self._execute_request_list(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 508, in _execute_request_list
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     raw_outputs = self.pipeline.forward(batch)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return func(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 618, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     latents = self._diffuse_segment(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]               ^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 477, in _diffuse_segment
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     noise_pred_cond = self._predict_noise(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]                       ^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 429, in _predict_noise
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     noise_pred = self.transformer(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]                  ^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return self._call_impl(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return forward_call(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/hooks/base.py", line 141, in __call__
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return registry.dispatch(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/hooks/base.py", line 315, in dispatch
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     output = self.module._omni_original_forward(*args, **kwargs)  # type: ignore[attr-defined]
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/v2v_transformer.py", line 767, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     x = self.patch_embedding(x)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]         ^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return self._call_impl(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return forward_call(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/conv.py", line 723, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return self._conv_forward(input, self.weight, self.bias)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/conv.py", line 718, in _conv_forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]     return F.conv3d(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399]            ^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1399] RuntimeError: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+ERROR 08-08 10:52:02 [diffusion_worker.py:994] Error executing RPC: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+ERROR 08-08 10:52:02 [diffusion_worker.py:994] Traceback (most recent call last):
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 992, in _execute_rpc
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     result = self.worker.execute_method(method, *args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 1400, in execute_method
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     raise e
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 1395, in execute_method
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return func(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 458, in execute_model
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     output = self.model_runner.execute_model(req, kv_prefetch_job=kv_prefetch_job)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 567, in execute_model
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     runner_output = self._execute_request_list(
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 508, in _execute_request_list
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     raw_outputs = self.pipeline.forward(batch)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return func(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 618, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     latents = self._diffuse_segment(
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]               ^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 477, in _diffuse_segment
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     noise_pred_cond = self._predict_noise(
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]                       ^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 429, in _predict_noise
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     noise_pred = self.transformer(
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]                  ^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return self._call_impl(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return forward_call(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/hooks/base.py", line 141, in __call__
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return registry.dispatch(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/hooks/base.py", line 315, in dispatch
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     output = self.module._omni_original_forward(*args, **kwargs)  # type: ignore[attr-defined]
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/v2v_transformer.py", line 767, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     x = self.patch_embedding(x)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]         ^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return self._call_impl(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return forward_call(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/conv.py", line 723, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return self._conv_forward(input, self.weight, self.bias)
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/conv.py", line 718, in _conv_forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]     return F.conv3d(
+ERROR 08-08 10:52:02 [diffusion_worker.py:994]            ^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:994] RuntimeError: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067] Error processing RPC: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067] Traceback (most recent call last):
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 1063, in _worker_busy_loop
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     result, should_reply = self._execute_rpc(msg)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]                            ^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 1024, in _execute_rpc
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     raise rpc_exception
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 992, in _execute_rpc
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     result = self.worker.execute_method(method, *args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 1400, in execute_method
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     raise e
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 1395, in execute_method
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return func(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_worker.py", line 458, in execute_model
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     output = self.model_runner.execute_model(req, kv_prefetch_job=kv_prefetch_job)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 567, in execute_model
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     runner_output = self._execute_request_list(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/worker/diffusion_model_runner.py", line 508, in _execute_request_list
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     raw_outputs = self.pipeline.forward(batch)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return func(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 618, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     latents = self._diffuse_segment(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]               ^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 477, in _diffuse_segment
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     noise_pred_cond = self._predict_noise(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]                       ^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/pipeline_skyreels_v3_v2v.py", line 429, in _predict_noise
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     noise_pred = self.transformer(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]                  ^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return self._call_impl(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return forward_call(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/hooks/base.py", line 141, in __call__
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return registry.dispatch(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/hooks/base.py", line 315, in dispatch
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     output = self.module._omni_original_forward(*args, **kwargs)  # type: ignore[attr-defined]
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/models/skyreels_v3/v2v_transformer.py", line 767, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     x = self.patch_embedding(x)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]         ^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return self._call_impl(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return forward_call(*args, **kwargs)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/conv.py", line 723, in forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return self._conv_forward(input, self.weight, self.bias)
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]   File "/workspace/vllm-omni/.venv/lib/python3.12/site-packages/torch/nn/modules/conv.py", line 718, in _conv_forward
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]     return F.conv3d(
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067]            ^^^^^^^^^
+ERROR 08-08 10:52:02 [diffusion_worker.py:1067] RuntimeError: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155] Diffusion request 0_c21d86e1-8e3f-4457-9626-75bfd973a712 failed: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155] Traceback (most recent call last):
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 145, in _dispatch_request
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155]     async for results in self._engine.step_streaming(request):
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 325, in step_streaming
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155]     formatted_outputs = self.postprocess_output(request, output)
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 377, in postprocess_output
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155]     raise RuntimeError(output.error)
+ERROR 08-08 10:52:02 [inline_stage_diffusion_client.py:155] RuntimeError: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+INFO 08-08 10:52:02 [orchestrator.py:783] [Orchestrator] Aborted request(s) ['0_c21d86e1-8e3f-4457-9626-75bfd973a712']
+Processed prompts:   0%|          | 0/1 [00:11<?, ?it/s]
+ERROR 08-08 10:52:02 [omni.py:92] [Omni] Failed to run generation: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+ERROR 08-08 10:52:02 [omni.py:92] Traceback (most recent call last):
+ERROR 08-08 10:52:02 [omni.py:92]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni.py", line 90, in generate
+ERROR 08-08 10:52:02 [omni.py:92]     return list(self._run_generation(prompts, sampling_params_list, use_tqdm))
+ERROR 08-08 10:52:02 [omni.py:92]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [omni.py:92]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni.py", line 173, in _run_generation
+ERROR 08-08 10:52:02 [omni.py:92]     should_continue, req_id, stage_id, req_state = self._handle_output_message(msg)
+ERROR 08-08 10:52:02 [omni.py:92]                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:52:02 [omni.py:92]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni_base.py", line 401, in _handle_output_message
+ERROR 08-08 10:52:02 [omni.py:92]     self._raise_nonfatal_error_message(msg)
+ERROR 08-08 10:52:02 [omni.py:92]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni_base.py", line 439, in _raise_nonfatal_error_message
+ERROR 08-08 10:52:02 [omni.py:92]     raise_client_error_or(
+ERROR 08-08 10:52:02 [omni.py:92]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/errors.py", line 81, in raise_client_error_or
+ERROR 08-08 10:52:02 [omni.py:92]     raise fallback(message)
+ERROR 08-08 10:52:02 [omni.py:92] RuntimeError: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+INFO 08-08 10:52:02 [omni_base.py:641] [Omni] Shutting down
+INFO 08-08 10:52:02 [async_omni_engine.py:1837] [AsyncOmniEngine] Shutting down Orchestrator
+INFO 08-08 10:52:02 [orchestrator.py:612] [Orchestrator] Received shutdown signal
+INFO 08-08 10:52:02 [orchestrator.py:2258] [Orchestrator] Shutting down all 1 client(s)
+INFO 08-08 10:52:02 [diffusion_worker.py:1117] Worker 0: Received shutdown message
+INFO 08-08 10:52:02 [diffusion_worker.py:1138] event loop terminated.
+INFO 08-08 10:52:02 [diffusion_worker.py:1208] Worker 0: Shutdown complete.
+INFO 08-08 10:52:07 [stage_pool.py:1237] [StagePool] Stage 0 replica 0 shut down
+Traceback (most recent call last):
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/examples/offline_inference/image_to_video/image_to_video.py", line 774, in <module>
+    main()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/examples/offline_inference/image_to_video/image_to_video.py", line 573, in main
+    frames = omni.generate(prompt_dict, sampling_params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni.py", line 90, in generate
+    return list(self._run_generation(prompts, sampling_params_list, use_tqdm))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni.py", line 173, in _run_generation
+    should_continue, req_id, stage_id, req_state = self._handle_output_message(msg)
+                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni_base.py", line 401, in _handle_output_message
+    self._raise_nonfatal_error_message(msg)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni_base.py", line 439, in _raise_nonfatal_error_message
+    raise_client_error_or(
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/errors.py", line 81, in raise_client_error_or
+    raise fallback(message)
+RuntimeError: Input type (CPUBFloat16Type) and weight type (CUDABFloat16Type) should be the same or input should be a MKLDNN tensor and weight is a dense tensor
+/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

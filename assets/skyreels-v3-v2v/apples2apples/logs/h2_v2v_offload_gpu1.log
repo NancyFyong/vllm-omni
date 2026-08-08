@@ -1,0 +1,717 @@
+/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+INFO 08-08 10:17:40 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
+INFO 08-08 10:17:43 [patch.py:481] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
+loaded (72, 720, 1364, 3)
+INFO 08-08 10:18:56 [omni_base.py:183] [Omni] Initializing with model /workspace/models/SkyReels-V3-V2V-14B
+INFO 08-08 10:18:56 [async_omni_engine.py:175] [AsyncOmniEngine] Initializing with model /workspace/models/SkyReels-V3-V2V-14B
+INFO 08-08 10:18:56 [async_omni_engine.py:274] [AsyncOmniEngine] Launching Orchestrator thread with 1 stages
+INFO 08-08 10:18:57 [stage_utils.py:167] Stage 0 logical-to-physical device mapping: 0->1
+INFO 08-08 10:18:57 [data.py:1746] Parsed attention config from DIFFUSION_ATTENTION_BACKEND 'FLASH_ATTN': default=AttentionSpec(backend='FLASH_ATTN', skip_softmax=None, quant=None, block_sparse=None), per_role={}
+INFO 08-08 10:18:58 [multiproc_executor.py:254] Starting server...
+/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/__init__.py:19: RuntimeWarning: Failed to import version from _version.py: No module named 'vllm_omni._version'
+This typically happens in development mode before building.
+Using fallback version 'dev'.
+  from .version import __version__, __version_tuple__  # isort:skip # noqa: F401
+INFO 08-08 10:20:41 [patch.py:252] NVFP4 W4A4 weight_scale NaN-clamp: installed.
+INFO 08-08 10:20:43 [patch.py:481] [cumem-cuda] CuMemAllocator._python_free_callback patched: asleep guard extended to all platforms.
+loaded (72, 720, 1364, 3)
+INFO 08-08 10:21:58 [omni_base.py:183] [Omni] Initializing with model /workspace/models/SkyReels-V3-V2V-14B
+INFO 08-08 10:21:58 [async_omni_engine.py:175] [AsyncOmniEngine] Initializing with model /workspace/models/SkyReels-V3-V2V-14B
+INFO 08-08 10:21:58 [async_omni_engine.py:274] [AsyncOmniEngine] Launching Orchestrator thread with 1 stages
+INFO 08-08 10:21:59 [stage_utils.py:167] Stage 0 logical-to-physical device mapping: 0->1
+INFO 08-08 10:21:59 [data.py:1746] Parsed attention config from DIFFUSION_ATTENTION_BACKEND 'FLASH_ATTN': default=AttentionSpec(backend='FLASH_ATTN', skip_softmax=None, quant=None, block_sparse=None), per_role={}
+INFO 08-08 10:22:00 [multiproc_executor.py:254] Starting server...
+ERROR 08-08 10:22:00 [stage_runtime.py:253] [StageRuntime] Stage initialization failed; shutting down 0 initialized client(s)
+ERROR 08-08 10:22:00 [stage_runtime.py:253] Traceback (most recent call last):
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 240, in initialize
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     initialized_clients = self._initialize_stage_replicas(stage_plans, self._stage_init_timeout)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 504, in _initialize_stage_replicas
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     raise primary_exc
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 465, in _init_group
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     client = self._initialize_replica(
+ERROR 08-08 10:22:00 [stage_runtime.py:253]              ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 529, in _initialize_replica
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     return self._initialize_local_diffusion_replica(plan, stage_init_timeout)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 650, in _initialize_local_diffusion_replica
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     client, resources = launch_diffusion_stage_replica(
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_engine_startup.py", line 1506, in launch_diffusion_stage_replica
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     client = initialize_diffusion_stage(
+ERROR 08-08 10:22:00 [stage_runtime.py:253]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_init_utils.py", line 1241, in initialize_diffusion_stage
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     return create_diffusion_client(model, od_config, metadata, stage_init_timeout, batch_size, use_inline)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/stage_diffusion_client.py", line 55, in create_diffusion_client
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 62, in __init__
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     self._engine = DiffusionEngine.make_engine(self.od_config)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 685, in make_engine
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     engine = engine_class(config, scheduler=scheduler)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 180, in __init__
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     self._init_executor(od_config)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 215, in _init_executor
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     self.executor = executor_class(od_config)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/abstract.py", line 64, in __init__
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     self._init_executor()
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 87, in _init_executor
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 286, in _launch_workers
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     process.start()
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/process.py", line 121, in start
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     self._popen = self._Popen(self)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                   ^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/context.py", line 224, in _Popen
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     return _default_context.get_context().Process._Popen(process_obj)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     return Popen(process_obj)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]            ^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     super().__init__(process_obj)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     self._launch(process_obj)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     prep_data = spawn.get_preparation_data(process_obj._name)
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     _check_not_importing_main()
+ERROR 08-08 10:22:00 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+ERROR 08-08 10:22:00 [stage_runtime.py:253]     raise RuntimeError('''
+ERROR 08-08 10:22:00 [stage_runtime.py:253] RuntimeError: 
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         An attempt has been made to start a new process before the
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         current process has finished its bootstrapping phase.
+ERROR 08-08 10:22:00 [stage_runtime.py:253] 
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         This probably means that you are not using fork to start your
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         child processes and you have forgotten to use the proper idiom
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         in the main module:
+ERROR 08-08 10:22:00 [stage_runtime.py:253] 
+ERROR 08-08 10:22:00 [stage_runtime.py:253]             if __name__ == '__main__':
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                 freeze_support()
+ERROR 08-08 10:22:00 [stage_runtime.py:253]                 ...
+ERROR 08-08 10:22:00 [stage_runtime.py:253] 
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         The "freeze_support()" line can be omitted if the program
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         is not going to be frozen to produce an executable.
+ERROR 08-08 10:22:00 [stage_runtime.py:253] 
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         To fix this issue, refer to the "Safe importing of main module"
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         section in https://docs.python.org/3/library/multiprocessing.html
+ERROR 08-08 10:22:00 [stage_runtime.py:253]         
+ERROR 08-08 10:22:00 [async_omni_engine.py:448] [AsyncOmniEngine] Orchestrator thread crashed
+ERROR 08-08 10:22:00 [async_omni_engine.py:448] Traceback (most recent call last):
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 442, in _bootstrap_orchestrator
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     loop.run_until_complete(_run_orchestrator())
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     return future.result()
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 400, in _run_orchestrator
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     self._initialize_stages(stage_init_timeout)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 350, in _initialize_stages
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     self._runtime.initialize()
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 259, in initialize
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     raise exc
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 240, in initialize
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     initialized_clients = self._initialize_stage_replicas(stage_plans, self._stage_init_timeout)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 504, in _initialize_stage_replicas
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     raise primary_exc
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 465, in _init_group
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     client = self._initialize_replica(
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]              ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 529, in _initialize_replica
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     return self._initialize_local_diffusion_replica(plan, stage_init_timeout)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 650, in _initialize_local_diffusion_replica
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     client, resources = launch_diffusion_stage_replica(
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_engine_startup.py", line 1506, in launch_diffusion_stage_replica
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     client = initialize_diffusion_stage(
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_init_utils.py", line 1241, in initialize_diffusion_stage
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     return create_diffusion_client(model, od_config, metadata, stage_init_timeout, batch_size, use_inline)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/stage_diffusion_client.py", line 55, in create_diffusion_client
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 62, in __init__
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     self._engine = DiffusionEngine.make_engine(self.od_config)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 685, in make_engine
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     engine = engine_class(config, scheduler=scheduler)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 180, in __init__
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     self._init_executor(od_config)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 215, in _init_executor
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     self.executor = executor_class(od_config)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/abstract.py", line 64, in __init__
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     self._init_executor()
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 87, in _init_executor
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 286, in _launch_workers
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     process.start()
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/process.py", line 121, in start
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     self._popen = self._Popen(self)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                   ^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/context.py", line 224, in _Popen
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     return _default_context.get_context().Process._Popen(process_obj)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     return Popen(process_obj)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     super().__init__(process_obj)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     self._launch(process_obj)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     prep_data = spawn.get_preparation_data(process_obj._name)
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     _check_not_importing_main()
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]     raise RuntimeError('''
+ERROR 08-08 10:22:00 [async_omni_engine.py:448] RuntimeError: 
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         An attempt has been made to start a new process before the
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         current process has finished its bootstrapping phase.
+ERROR 08-08 10:22:00 [async_omni_engine.py:448] 
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         This probably means that you are not using fork to start your
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         child processes and you have forgotten to use the proper idiom
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         in the main module:
+ERROR 08-08 10:22:00 [async_omni_engine.py:448] 
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]             if __name__ == '__main__':
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                 freeze_support()
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]                 ...
+ERROR 08-08 10:22:00 [async_omni_engine.py:448] 
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         The "freeze_support()" line can be omitted if the program
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         is not going to be frozen to produce an executable.
+ERROR 08-08 10:22:00 [async_omni_engine.py:448] 
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         To fix this issue, refer to the "Safe importing of main module"
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         section in https://docs.python.org/3/library/multiprocessing.html
+ERROR 08-08 10:22:00 [async_omni_engine.py:448]         
+INFO 08-08 10:22:00 [async_omni_engine.py:1837] [AsyncOmniEngine] Shutting down Orchestrator
+Exception in thread orchestrator:
+Traceback (most recent call last):
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 442, in _bootstrap_orchestrator
+    loop.run_until_complete(_run_orchestrator())
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 400, in _run_orchestrator
+    self._initialize_stages(stage_init_timeout)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 350, in _initialize_stages
+    self._runtime.initialize()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 259, in initialize
+    raise exc
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 240, in initialize
+    initialized_clients = self._initialize_stage_replicas(stage_plans, self._stage_init_timeout)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 504, in _initialize_stage_replicas
+    raise primary_exc
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 465, in _init_group
+    client = self._initialize_replica(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 529, in _initialize_replica
+    return self._initialize_local_diffusion_replica(plan, stage_init_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 650, in _initialize_local_diffusion_replica
+    client, resources = launch_diffusion_stage_replica(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_engine_startup.py", line 1506, in launch_diffusion_stage_replica
+    client = initialize_diffusion_stage(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_init_utils.py", line 1241, in initialize_diffusion_stage
+    return create_diffusion_client(model, od_config, metadata, stage_init_timeout, batch_size, use_inline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/stage_diffusion_client.py", line 55, in create_diffusion_client
+    return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 62, in __init__
+    self._engine = DiffusionEngine.make_engine(self.od_config)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 685, in make_engine
+    engine = engine_class(config, scheduler=scheduler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 180, in __init__
+    self._init_executor(od_config)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 215, in _init_executor
+    self.executor = executor_class(od_config)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/abstract.py", line 64, in __init__
+    self._init_executor()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 87, in _init_executor
+    processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 286, in _launch_workers
+    process.start()
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/context.py", line 224, in _Popen
+    return _default_context.get_context().Process._Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+Traceback (most recent call last):
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 442, in _bootstrap_orchestrator
+    loop.run_until_complete(_run_orchestrator())
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 400, in _run_orchestrator
+    self._initialize_stages(stage_init_timeout)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 350, in _initialize_stages
+    self._runtime.initialize()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 259, in initialize
+    raise exc
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 240, in initialize
+    initialized_clients = self._initialize_stage_replicas(stage_plans, self._stage_init_timeout)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 504, in _initialize_stage_replicas
+    raise primary_exc
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 465, in _init_group
+    client = self._initialize_replica(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 529, in _initialize_replica
+    return self._initialize_local_diffusion_replica(plan, stage_init_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 650, in _initialize_local_diffusion_replica
+    client, resources = launch_diffusion_stage_replica(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_engine_startup.py", line 1506, in launch_diffusion_stage_replica
+    client = initialize_diffusion_stage(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_init_utils.py", line 1241, in initialize_diffusion_stage
+    return create_diffusion_client(model, od_config, metadata, stage_init_timeout, batch_size, use_inline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/stage_diffusion_client.py", line 55, in create_diffusion_client
+    return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 62, in __init__
+    self._engine = DiffusionEngine.make_engine(self.od_config)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 685, in make_engine
+    engine = engine_class(config, scheduler=scheduler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 180, in __init__
+    self._init_executor(od_config)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 215, in _init_executor
+    self.executor = executor_class(od_config)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/abstract.py", line 64, in __init__
+    self._init_executor()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 87, in _init_executor
+    processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 286, in _launch_workers
+    process.start()
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/process.py", line 121, in start
+    self._popen = self._Popen(self)
+                  ^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/context.py", line 224, in _Popen
+    return _default_context.get_context().Process._Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/context.py", line 289, in _Popen
+    return Popen(process_obj)
+           ^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 32, in __init__
+    super().__init__(process_obj)
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_fork.py", line 19, in __init__
+    self._launch(process_obj)
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/popen_spawn_posix.py", line 42, in _launch
+    prep_data = spawn.get_preparation_data(process_obj._name)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 164, in get_preparation_data
+    _check_not_importing_main()
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 140, in _check_not_importing_main
+    raise RuntimeError('''
+RuntimeError: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/tmp/skyreels-bench/run_v2v_offload.py", line 17, in <module>
+    omni = Omni(
+           ^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni_base.py", line 189, in __init__
+    self.engine = AsyncOmniEngine(
+                  ^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 289, in __init__
+    self._wait_for_orchestrator_init(startup_future, startup_timeout)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 493, in _wait_for_orchestrator_init
+    startup_future.result(
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+RuntimeError: Orchestrator initialization failed: 
+        An attempt has been made to start a new process before the
+        current process has finished its bootstrapping phase.
+
+        This probably means that you are not using fork to start your
+        child processes and you have forgotten to use the proper idiom
+        in the main module:
+
+            if __name__ == '__main__':
+                freeze_support()
+                ...
+
+        The "freeze_support()" line can be omitted if the program
+        is not going to be frozen to produce an executable.
+
+        To fix this issue, refer to the "Safe importing of main module"
+        section in https://docs.python.org/3/library/multiprocessing.html
+        
+ERROR 08-08 10:22:03 [multiproc_executor.py:298] Rank 0 scheduler is dead. Please check if there are relevant logs.
+ERROR 08-08 10:22:03 [multiproc_executor.py:300] Exit code: 1
+ERROR 08-08 10:22:03 [stage_runtime.py:253] [StageRuntime] Stage initialization failed; shutting down 0 initialized client(s)
+ERROR 08-08 10:22:03 [stage_runtime.py:253] Traceback (most recent call last):
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 240, in initialize
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     initialized_clients = self._initialize_stage_replicas(stage_plans, self._stage_init_timeout)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 504, in _initialize_stage_replicas
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     raise primary_exc
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 465, in _init_group
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     client = self._initialize_replica(
+ERROR 08-08 10:22:03 [stage_runtime.py:253]              ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 529, in _initialize_replica
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     return self._initialize_local_diffusion_replica(plan, stage_init_timeout)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 650, in _initialize_local_diffusion_replica
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     client, resources = launch_diffusion_stage_replica(
+ERROR 08-08 10:22:03 [stage_runtime.py:253]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_engine_startup.py", line 1506, in launch_diffusion_stage_replica
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     client = initialize_diffusion_stage(
+ERROR 08-08 10:22:03 [stage_runtime.py:253]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_init_utils.py", line 1241, in initialize_diffusion_stage
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     return create_diffusion_client(model, od_config, metadata, stage_init_timeout, batch_size, use_inline)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/stage_diffusion_client.py", line 55, in create_diffusion_client
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 62, in __init__
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     self._engine = DiffusionEngine.make_engine(self.od_config)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 685, in make_engine
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     engine = engine_class(config, scheduler=scheduler)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 180, in __init__
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     self._init_executor(od_config)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 215, in _init_executor
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     self.executor = executor_class(od_config)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/abstract.py", line 64, in __init__
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     self._init_executor()
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 87, in _init_executor
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 296, in _launch_workers
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     data = reader.recv()
+ERROR 08-08 10:22:03 [stage_runtime.py:253]            ^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 250, in recv
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     buf = self._recv_bytes()
+ERROR 08-08 10:22:03 [stage_runtime.py:253]           ^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 430, in _recv_bytes
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     buf = self._recv(4)
+ERROR 08-08 10:22:03 [stage_runtime.py:253]           ^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [stage_runtime.py:253]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 399, in _recv
+ERROR 08-08 10:22:03 [stage_runtime.py:253]     raise EOFError
+ERROR 08-08 10:22:03 [stage_runtime.py:253] EOFError
+ERROR 08-08 10:22:03 [async_omni_engine.py:448] [AsyncOmniEngine] Orchestrator thread crashed
+ERROR 08-08 10:22:03 [async_omni_engine.py:448] Traceback (most recent call last):
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 442, in _bootstrap_orchestrator
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     loop.run_until_complete(_run_orchestrator())
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     return future.result()
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 400, in _run_orchestrator
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     self._initialize_stages(stage_init_timeout)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 350, in _initialize_stages
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     self._runtime.initialize()
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 259, in initialize
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     raise exc
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 240, in initialize
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     initialized_clients = self._initialize_stage_replicas(stage_plans, self._stage_init_timeout)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 504, in _initialize_stage_replicas
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     raise primary_exc
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 465, in _init_group
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     client = self._initialize_replica(
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]              ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 529, in _initialize_replica
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     return self._initialize_local_diffusion_replica(plan, stage_init_timeout)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 650, in _initialize_local_diffusion_replica
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     client, resources = launch_diffusion_stage_replica(
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_engine_startup.py", line 1506, in launch_diffusion_stage_replica
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     client = initialize_diffusion_stage(
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_init_utils.py", line 1241, in initialize_diffusion_stage
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     return create_diffusion_client(model, od_config, metadata, stage_init_timeout, batch_size, use_inline)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/stage_diffusion_client.py", line 55, in create_diffusion_client
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 62, in __init__
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     self._engine = DiffusionEngine.make_engine(self.od_config)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 685, in make_engine
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     engine = engine_class(config, scheduler=scheduler)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 180, in __init__
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     self._init_executor(od_config)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 215, in _init_executor
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     self.executor = executor_class(od_config)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/abstract.py", line 64, in __init__
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     self._init_executor()
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 87, in _init_executor
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 296, in _launch_workers
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     data = reader.recv()
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]            ^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 250, in recv
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     buf = self._recv_bytes()
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]           ^^^^^^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 430, in _recv_bytes
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     buf = self._recv(4)
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]           ^^^^^^^^^^^^^
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]   File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 399, in _recv
+ERROR 08-08 10:22:03 [async_omni_engine.py:448]     raise EOFError
+ERROR 08-08 10:22:03 [async_omni_engine.py:448] EOFError
+INFO 08-08 10:22:03 [async_omni_engine.py:1837] [AsyncOmniEngine] Shutting down Orchestrator
+Exception in thread orchestrator:
+Traceback (most recent call last):
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 442, in _bootstrap_orchestrator
+    loop.run_until_complete(_run_orchestrator())
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 400, in _run_orchestrator
+    self._initialize_stages(stage_init_timeout)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 350, in _initialize_stages
+    self._runtime.initialize()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 259, in initialize
+    raise exc
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 240, in initialize
+    initialized_clients = self._initialize_stage_replicas(stage_plans, self._stage_init_timeout)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 504, in _initialize_stage_replicas
+    raise primary_exc
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 465, in _init_group
+    client = self._initialize_replica(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 529, in _initialize_replica
+    return self._initialize_local_diffusion_replica(plan, stage_init_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 650, in _initialize_local_diffusion_replica
+    client, resources = launch_diffusion_stage_replica(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_engine_startup.py", line 1506, in launch_diffusion_stage_replica
+    client = initialize_diffusion_stage(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_init_utils.py", line 1241, in initialize_diffusion_stage
+    return create_diffusion_client(model, od_config, metadata, stage_init_timeout, batch_size, use_inline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/stage_diffusion_client.py", line 55, in create_diffusion_client
+    return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 62, in __init__
+    self._engine = DiffusionEngine.make_engine(self.od_config)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 685, in make_engine
+    engine = engine_class(config, scheduler=scheduler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 180, in __init__
+    self._init_executor(od_config)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 215, in _init_executor
+    self.executor = executor_class(od_config)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/abstract.py", line 64, in __init__
+    self._init_executor()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 87, in _init_executor
+    processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 296, in _launch_workers
+    data = reader.recv()
+           ^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 250, in recv
+    buf = self._recv_bytes()
+          ^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 430, in _recv_bytes
+    buf = self._recv(4)
+          ^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 399, in _recv
+    raise EOFError
+EOFError
+Traceback (most recent call last):
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 442, in _bootstrap_orchestrator
+    loop.run_until_complete(_run_orchestrator())
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 400, in _run_orchestrator
+    self._initialize_stages(stage_init_timeout)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 350, in _initialize_stages
+    self._runtime.initialize()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 259, in initialize
+    raise exc
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 240, in initialize
+    initialized_clients = self._initialize_stage_replicas(stage_plans, self._stage_init_timeout)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 504, in _initialize_stage_replicas
+    raise primary_exc
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 465, in _init_group
+    client = self._initialize_replica(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 529, in _initialize_replica
+    return self._initialize_local_diffusion_replica(plan, stage_init_timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_runtime.py", line 650, in _initialize_local_diffusion_replica
+    client, resources = launch_diffusion_stage_replica(
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_engine_startup.py", line 1506, in launch_diffusion_stage_replica
+    client = initialize_diffusion_stage(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/stage_init_utils.py", line 1241, in initialize_diffusion_stage
+    return create_diffusion_client(model, od_config, metadata, stage_init_timeout, batch_size, use_inline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/stage_diffusion_client.py", line 55, in create_diffusion_client
+    return InlineStageDiffusionClient(model, od_config, metadata, batch_size=batch_size)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/inline_stage_diffusion_client.py", line 62, in __init__
+    self._engine = DiffusionEngine.make_engine(self.od_config)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 685, in make_engine
+    engine = engine_class(config, scheduler=scheduler)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 180, in __init__
+    self._init_executor(od_config)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/diffusion_engine.py", line 215, in _init_executor
+    self.executor = executor_class(od_config)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/abstract.py", line 64, in __init__
+    self._init_executor()
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 87, in _init_executor
+    processes, result_handle = self._launch_workers(broadcast_handle, self.wake_events)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/diffusion/executor/multiproc_executor.py", line 296, in _launch_workers
+    data = reader.recv()
+           ^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 250, in recv
+    buf = self._recv_bytes()
+          ^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 430, in _recv_bytes
+    buf = self._recv(4)
+          ^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/multiprocessing/connection.py", line 399, in _recv
+    raise EOFError
+EOFError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/tmp/skyreels-bench/run_v2v_offload.py", line 17, in <module>
+    omni = Omni(
+           ^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/entrypoints/omni_base.py", line 189, in __init__
+    self.engine = AsyncOmniEngine(
+                  ^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 289, in __init__
+    self._wait_for_orchestrator_init(startup_future, startup_timeout)
+  File "/workspace/vllm-omni/.claude/worktrees/skyreels-v3-v2v-impl/vllm_omni/engine/async_omni_engine.py", line 493, in _wait_for_orchestrator_init
+    startup_future.result(
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 456, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/workspace/uv_venv/pythons/cpython-3.12-linux-x86_64-gnu/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+RuntimeError: Orchestrator initialization failed: 
