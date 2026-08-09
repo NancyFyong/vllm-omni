@@ -1,0 +1,28 @@
+# JoyAI-Video-Edit deploy: offline instruction-driven video editing.
+#
+# Single GPU, single request. The three components co-resident (30 GiB DiT + ~15 GiB MiMo-VL
+# condition encoder + 1.4 GiB VAE, all bf16) need roughly 50 GiB before activations, so this wants an
+# 80 GiB-class card and there is no tensor-parallel path in this MVP.
+async_chunk: false
+trust_remote_code: true
+distributed_executor_backend: mp
+
+stages:
+  - stage_id: 0
+    devices: "0"
+    # Not a throughput knob. The DiT shares one rotary table and one KV cache scope across the batch
+    # and upstream indexes `current_temporal_ids[0]`, so samples 1..N would be generated against
+    # sample 0's positions. `forward()` raises on batch > 1 as well -- this is the outer guard.
+    max_num_seqs: 1
+    tensor_parallel_size: 1
+    enforce_eager: true
+    default_sampling_params:
+      seed: 42
+      # AR-DMD distillation collapsed the sampling trajectory into exactly two Euler steps on a
+      # shift-5.159 sigma grid. Raising this integrates a velocity field that no longer matches the
+      # grid, so it degrades output instead of improving it.
+      num_inference_steps: 2
+      # 1248, not 1280: the VAE compresses 24x spatially (Stem stride 3 x three 2x blocks), and 1280
+      # is not divisible by 3.
+      height: 720
+      width: 1248

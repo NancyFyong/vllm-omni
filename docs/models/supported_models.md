@@ -95,5 +95,6 @@ th {
 | `MiniCPMO45OmniForConditionalGeneration` | MiniCPM-o 4.5 | `openbmb/MiniCPM-o-4_5` | ✅︎ | | ✅︎ | |
 | `ErnieImagePipeline` | ERNIE-Image | `baidu/ERNIE-Image`, `baidu/ERNIE-Image-Turbo` | ✅︎ | ✅︎ | ✅︎ | ✅︎ |
 |`HiDreamImagePipeline` | HiDream-I1-Full | `HiDream-ai/HiDream-I1-Full` | ✅︎ | ✅︎ | | |
+| `JoyAIVideoEditPipeline` | JoyAI-Video-Edit (instruction-driven video editing) | `jdopensource/JoyAI-Video-Edit` (needs a locally prepared directory, see the [recipe](https://github.com/vllm-project/vllm-omni/blob/main/recipes/JD/JoyAI-Video-Edit.md)) | ✅︎ | | | |
 
 ✅︎ indicates the model is supported on that backend. Empty cells mean not listed as supported on that backend.
