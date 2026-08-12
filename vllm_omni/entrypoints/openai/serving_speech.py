@@ -59,6 +59,18 @@ from vllm_omni.entrypoints.openai.tts_adapters import (
     tts_entry_stage_archs,
 )
 from vllm_omni.entrypoints.utils import coerce_param_message_types
+from vllm_omni.model_executor.models.audio8_tts.codec_utils import (
+    estimate_reference_code_frames,
+)
+from vllm_omni.model_executor.models.audio8_tts.prompt_utils import (
+    build_text_only_prompt_ids as build_audio8_text_only_prompt_ids,
+)
+from vllm_omni.model_executor.models.audio8_tts.prompt_utils import (
+    estimate_voice_clone_prompt_len as estimate_audio8_voice_clone_prompt_len,
+)
+from vllm_omni.model_executor.models.audio8_tts.prompt_utils import (
+    normalize_text as normalize_audio8_text,
+)
 from vllm_omni.model_executor.models.fish_speech.prompt_utils import (
     build_fish_text_only_prompt_ids,
     estimate_fish_voice_clone_prompt_len_from_normalized,
@@ -94,6 +106,7 @@ _COSYVOICE3_PROMPT_DELIMITER = "<|endofprompt|>"
 _COSYVOICE3_PROMPT_PREFIX = f"You are a helpful assistant.{_COSYVOICE3_PROMPT_DELIMITER}"
 _SAMPLING_MAX_TOKENS_TTS_MODEL_TYPES = {
     "fish_tts",
+    "audio8_tts",
     "qwen3_tts",
     "voxtral_tts",
     "cosyvoice3",
@@ -433,6 +446,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         self._tts_stage = self._find_tts_stage()
         self._is_tts = self._tts_stage is not None
         self._fish_speech_tokenizer = None
+        self._audio8_tts_tokenizer = None
         self._covo_audio_tokenizer = None
         # Cached per process: the CosyVoice3 Qwen tokenizer + resolved model
         # path used for dynamic-token sizing. Without this, every request
@@ -484,6 +498,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         self._tts_executor = ThreadPoolExecutor(max_workers=1)
         self._build_voxtral_prompt_async = make_async(self._build_voxtral_prompt, executor=self._tts_executor)
         self._build_fish_speech_prompt_async = make_async(self._build_fish_speech_prompt, executor=self._tts_executor)
+        self._build_audio8_tts_prompt_async = make_async(self._build_audio8_tts_prompt, executor=self._tts_executor)
         self._estimate_prompt_len_async = make_async(self._estimate_prompt_len, executor=self._tts_executor)
 
         # Resolve the per-model serving adapter (RFC #4327), keyed on the
@@ -1114,6 +1129,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
             if self._tts_model_type in (
                 "cosyvoice3",
                 "fish_tts",
+                "audio8_tts",
                 "omnivoice",
                 "moss_tts_nano",
                 "glm_tts",
@@ -1123,6 +1139,7 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
                 label = {
                     "cosyvoice3": "CosyVoice3",
                     "fish_tts": "Fish Speech",
+                    "audio8_tts": "Audio8 TTS",
                     "omnivoice": "OmniVoice",
                     "moss_tts_nano": "MOSS-TTS-Nano",
                     "higgs_audio_v2": "Higgs-Audio V2",
@@ -2689,6 +2706,82 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
         if request.max_new_tokens is not None:
             additional_information["max_new_tokens"] = request.max_new_tokens
         prompt = tokens_input(prompt_token_ids=[1] * ph_len)
+        prompt["additional_information"] = additional_information
+        return prompt
+
+    # ---- Audio8 TTS helpers ----
+
+    def _get_audio8_tts_tokenizer(self):
+        from transformers import AutoTokenizer
+
+        if self._audio8_tts_tokenizer is None:
+            model_name = self.engine_client.model_config.model
+            self._audio8_tts_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        return self._audio8_tts_tokenizer
+
+    def _estimate_audio8_prompt_len(self, text: str, ref_text: str, ref_audio: object) -> int:
+        """Exact clone-prompt length, without encoding the reference audio.
+
+        Deliberately not defensive: the placeholder this sizes must match the
+        length ``preprocess()`` actually builds, so a wrong guess corrupts the
+        request instead of failing it. Let errors surface to the caller.
+        """
+        if not isinstance(ref_audio, (list, tuple)) or len(ref_audio) != 2:
+            raise ValueError("Audio8 TTS reference audio must be a (samples, sample_rate) pair")
+        wav, sample_rate = ref_audio
+        ref_frames = estimate_reference_code_frames(len(wav), int(sample_rate))
+        return estimate_audio8_voice_clone_prompt_len(self._get_audio8_tts_tokenizer(), text, ref_text, ref_frames)
+
+    def _build_audio8_tts_prompt(
+        self,
+        request: OpenAICreateSpeechRequest,
+        ref_audio_data: tuple[list[float], int] | None = None,
+        *,
+        has_inline_ref_audio: bool = False,
+    ) -> dict[str, Any]:
+        """Build the engine prompt for Audio8 TTS Preview.
+
+        Text-only prompts are tokenized here. Voice cloning cannot be: the
+        prompt embeds the reference audio's own codec codes, so the model-side
+        ``preprocess`` builds it and this path only reserves a placeholder of the
+        exact final length.
+        """
+        if ref_audio_data is None or not request.ref_text:
+            prompt_ids, normalized_text = build_audio8_text_only_prompt_ids(
+                self._get_audio8_tts_tokenizer(), request.input
+            )
+            # Scalars are list-wrapped for the text-only path, matching the
+            # other TTS entrypoints' additional_information shape.
+            additional_information: dict[str, Any] = {"text": [normalized_text]}
+            if request.max_new_tokens is not None:
+                additional_information["max_new_tokens"] = [request.max_new_tokens]
+            prompt = tokens_input(prompt_token_ids=prompt_ids)
+            prompt["additional_information"] = additional_information
+            return prompt
+
+        wav_samples, sample_rate = ref_audio_data
+        normalized_text = normalize_audio8_text(request.input)
+        normalized_ref_text = normalize_audio8_text(request.ref_text, add_default_speaker=True)
+        placeholder_len = self._estimate_audio8_prompt_len(normalized_text, normalized_ref_text, ref_audio_data)
+
+        # Structured clone: scalars (not list-wrapped) because model-side
+        # preprocess() consumes these fields directly.
+        additional_information = {
+            "text": normalized_text,
+            "ref_text": normalized_ref_text,
+            "ref_audio_wav": torch.from_numpy(np.asarray(wav_samples, dtype=np.float32)),
+            "ref_audio_sr": int(sample_rate),
+            "audio8_structured_voice_clone": True,
+        }
+        if request.voice is not None:
+            voice_lower = request.voice.lower()
+            if voice_lower in self.uploaded_speakers and not has_inline_ref_audio:
+                # Lets the model cache this speaker's encoded codes.
+                additional_information["voice_name"] = voice_lower
+                additional_information["voice_created_at"] = self._voice_created_at(voice_lower)
+        if request.max_new_tokens is not None:
+            additional_information["max_new_tokens"] = request.max_new_tokens
+        prompt = tokens_input(prompt_token_ids=[1] * placeholder_len)
         prompt["additional_information"] = additional_information
         return prompt
 

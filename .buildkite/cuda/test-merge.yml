@@ -171,6 +171,25 @@ steps:
           - pytest -s -v tests/e2e/online_serving/test_minicpmo_4_5_duplex.py -m 'advanced_model and cuda' --run-level 'advanced_model'
         mirror_hardwares: h100_1
 
+      - label: "TTS · Audio8 TTS Test"
+        source_file_dependencies:
+          - tests/e2e/offline_inference/test_audio8_tts.py
+          - tests/e2e/online_serving/test_audio8_tts.py
+          - tests/helpers/runtime.py
+          - vllm_omni/model_executor/models/audio8_tts/
+          - vllm_omni/model_executor/stage_input_processors/audio8_tts.py
+          - vllm_omni/entrypoints/openai/tts_adapters/audio8_tts.py
+          - vllm_omni/deploy/audio8_tts.yaml
+        timeout_in_minutes: 30
+        commands:
+          - |
+            timeout 30m bash -c "
+              export VLLM_LOGGING_LEVEL=DEBUG
+              export VLLM_WORKER_MULTIPROC_METHOD=spawn
+              pytest -s -v tests/e2e/offline_inference/test_audio8_tts.py tests/e2e/online_serving/test_audio8_tts.py -m 'advanced_model and cuda' --run-level 'advanced_model'
+            "
+        mirror_hardwares: l4_1
+
       - label: "TTS · VoxCPM2 Test"
         source_file_dependencies:
           - tests/e2e/offline_inference/test_voxcpm2_tts.py

@@ -295,6 +295,17 @@ _OMNI_MODELS = {
         "fish_speech_dac_decoder",
         "FishSpeechDACDecoder",
     ),
+    ## audio8_tts (Audio8 TTS Preview 0.6B)
+    "Audio8TTSSlowARForConditionalGeneration": (
+        "audio8_tts",
+        "audio8_tts_slow_ar",
+        "Audio8TTSSlowARForConditionalGeneration",
+    ),
+    "Audio8TTSCodecDecoder": (
+        "audio8_tts",
+        "audio8_tts_codec_decoder",
+        "Audio8TTSCodecDecoder",
+    ),
     ## VoxCPM2
     "VoxCPM2TalkerForConditionalGeneration": (
         "voxcpm2",
