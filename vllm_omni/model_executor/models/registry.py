@@ -312,6 +312,12 @@ _OMNI_MODELS = {
         "voxcpm2_talker",
         "VoxCPM2TalkerForConditionalGeneration",
     ),
+    ## dots.tts
+    "DotsTTSForConditionalGeneration": (
+        "dots_tts",
+        "dots_tts_talker",
+        "DotsTTSForConditionalGeneration",
+    ),
     ## Voxtral TTS
     "VoxtralTTSForConditionalGeneration": (
         "voxtral_tts",
