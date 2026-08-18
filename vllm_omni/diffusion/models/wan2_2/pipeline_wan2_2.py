@@ -208,6 +208,12 @@ def get_wan22_post_process_func(
             output_type = sampling_params.output_type
         if output_type == "latent":
             return video
+        # Fast path: when reduce_video_on_device is enabled the worker already
+        # reduced this to uint8 [F, H, W, C] frames on the GPU before D2H, so the
+        # float denormalize/scale below would corrupt already-[0,255] data. Emit
+        # the frames unchanged; the encoder consumes uint8 directly.
+        if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
+            return {"payload": {"video": video.cpu().numpy()}, "metadata": {}}
         video_metadata = {}
         if sampling_params is not None and getattr(sampling_params, "enable_frame_interpolation", False):
             video, multiplier = interpolate_video_tensor(
@@ -848,6 +854,24 @@ class Wan22Pipeline(
             )
             latents = latents / latents_std + latents_mean
             output = self.vae.decode(latents, return_dict=False)[0]
+
+            # RFC #6212 workstream 1: reduce the decoded video to uint8 frames on
+            # the GPU here, before the D2H/SHM copy in the worker, so Hop 1 carries
+            # uint8 (~4x smaller) instead of float32. Only when the whole batch can
+            # use it -- requests wanting frame interpolation or a non-"np" output
+            # keep the float tensor so their engine-side postprocess still works.
+            transport = getattr(self.od_config, "video_output_transport", None)
+            reduce_on_device = (
+                output_type == "np"
+                and transport is not None
+                and transport.reduce_video_on_device
+                and all((sp.output_type or "np") == "np" for sp in sampling_params_list)
+                and not any(getattr(sp, "enable_frame_interpolation", False) for sp in sampling_params_list)
+            )
+            if reduce_on_device:
+                from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
+
+                output = reduce_video_to_uint8_frames(output)
 
         if DEBUG_PERF:
             current_omni_platform.synchronize()

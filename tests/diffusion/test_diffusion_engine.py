@@ -570,6 +570,26 @@ class TestRequestBatchAdmission:
         with pytest.raises(ValueError, match="request_batch_max_wait_ms"):
             OmniDiffusionConfig(model="test", request_batch_max_wait_ms=bad_wait)
 
+    def test_config_normalizes_video_output_transport_mapping(self) -> None:
+        # Omni(**kwargs) / programmatic callers may pass a plain dict; it must
+        # become a real config so pipeline.forward can read attributes off it.
+        from vllm_omni.diffusion.data import VideoOutputTransportConfig
+
+        config = OmniDiffusionConfig(model="test", video_output_transport={"reduce_video_on_device": True})
+        assert isinstance(config.video_output_transport, VideoOutputTransportConfig)
+        assert config.video_output_transport.reduce_video_on_device is True
+
+    def test_config_defaults_video_output_transport(self) -> None:
+        from vllm_omni.diffusion.data import VideoOutputTransportConfig
+
+        config = OmniDiffusionConfig(model="test")
+        assert isinstance(config.video_output_transport, VideoOutputTransportConfig)
+        assert config.video_output_transport.reduce_video_on_device is False
+
+    def test_config_rejects_invalid_video_output_transport_mapping(self) -> None:
+        with pytest.raises(ValueError, match="transport_mode"):
+            OmniDiffusionConfig(model="test", video_output_transport={"transport_mode": "bogus"})
+
     def test_config_normalizes_request_batch_max_wait_ms_to_float(self) -> None:
         config = OmniDiffusionConfig(model="test", request_batch_max_wait_ms=5)
 

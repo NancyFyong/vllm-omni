@@ -626,6 +626,14 @@ class VideoOutputTransportConfig:
     # through shared memory instead of being pickled through the MessageQueue.
     shm_threshold_bytes: int = 1_000_000
 
+    # When True, video pipelines that support it reduce the decoded tensor to
+    # uint8 RGB frames on the GPU *before* the device-to-host copy, so every
+    # downstream hop carries uint8 instead of float32 (RFC #6212, workstream 1).
+    # Opt-in and default off: only pipelines wired for it honour the flag, and
+    # requests needing the float tensor (latent output, frame interpolation)
+    # transparently fall back to the float path.
+    reduce_video_on_device: bool = False
+
     VALID_TRANSPORT_MODES: ClassVar[frozenset[str]] = frozenset({"copy", "shared_memory"})
 
     def __post_init__(self):
@@ -978,6 +986,13 @@ class OmniDiffusionConfig:
                 "diffusion_compile_granularity must be 'regional' or 'full', "
                 f"got {self.diffusion_compile_granularity!r}"
             )
+        # Accept a mapping (programmatic callers / Omni(**kwargs)) or None and
+        # normalize to a real config, mirroring _DiffusionConfigProjection, so
+        # downstream code can always read attributes off this field.
+        if isinstance(self.video_output_transport, Mapping):
+            self.video_output_transport = VideoOutputTransportConfig(**dict(self.video_output_transport))
+        elif not isinstance(self.video_output_transport, VideoOutputTransportConfig):
+            self.video_output_transport = VideoOutputTransportConfig()
         if not isinstance(self.diffusion_compile_dynamic, bool):
             raise TypeError(f"diffusion_compile_dynamic must be a bool, got {type(self.diffusion_compile_dynamic)!r}")
         self.diffusion_kv_mode = parse_diffusion_kv_cache_mode(self.diffusion_kv_mode)
