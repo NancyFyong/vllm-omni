@@ -179,7 +179,7 @@ class TestReturnResultSyncPath:
         output = DiffusionOutput(output="data")
         proc._return_result(output)
 
-        mock_pack.assert_called_once_with(output)
+        mock_pack.assert_called_once_with(output, threshold=None)
         proc.result_mq.enqueue.assert_called_once_with(output)
 
     def test_non_diffusion_output_skips_async_in_request_mode(self, mocker):
@@ -193,7 +193,7 @@ class TestReturnResultSyncPath:
         output = {"type": "other"}
         proc._return_result(output)
 
-        mock_pack.assert_called_once_with(output)
+        mock_pack.assert_called_once_with(output, threshold=None)
         proc.result_mq.enqueue.assert_called_once_with(output)
 
 

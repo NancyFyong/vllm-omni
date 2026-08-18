@@ -4,13 +4,29 @@
 """IPC utilities for transferring large tensors via POSIX shared memory.
 
 Used by Hop1 (GPU worker <-> scheduler) to avoid pickling large video tensors
-through the MessageQueue. Tensors above ``_SHM_TENSOR_THRESHOLD`` are copied
+through the MessageQueue. Tensors above the packing threshold are copied
 into a named shared-memory segment; only a lightweight metadata dict is
 serialised through the queue.
+
+Two read strategies exist, selected by
+:class:`~vllm_omni.diffusion.data.VideoOutputTransportConfig`:
+
+``copy`` (default)
+    The reader copies the payload out of the segment and unlinks it. Ownership
+    is trivially correct because the segment dies on read, at the cost of one
+    extra full host copy per hop.
+
+``shared_memory`` (zero-copy, opt-in)
+    The reader maps the segment and wraps it *without* copying, for co-located
+    consumers (e.g. verl-omni rollout workers on the same host). This removes
+    the read-side copy but transfers ownership to the reader, which must
+    release the segment -- always go through :func:`borrowed_diffusion_output`.
 """
 
 from __future__ import annotations
 
+import contextlib
+import threading
 from typing import Any
 
 import numpy as np
@@ -20,6 +36,13 @@ from vllm_omni.diffusion.data import DiffusionOutput
 
 _SHM_TENSOR_THRESHOLD = 1_000_000  # 1 MB
 DIFFUSION_RPC_RESULT_ENVELOPE = "diffusion_rpc_result"
+
+# Segments currently borrowed zero-copy by this process, keyed by segment name.
+# Borrowed arrays point straight at ``shm.buf``, so the SharedMemory object has
+# to outlive them: dropping the last reference unmaps the buffer and would
+# leave dangling tensors. Entries are removed by ``release_borrowed_segments``.
+_BORROWED_SEGMENTS: dict[str, Any] = {}
+_BORROWED_SEGMENTS_LOCK = threading.Lock()
 
 
 def _array_to_shm(array: np.ndarray) -> dict[str, Any]:
@@ -44,11 +67,42 @@ def _array_to_shm(array: np.ndarray) -> dict[str, Any]:
     return handle
 
 
-def _array_from_shm(handle: dict[str, Any]) -> np.ndarray:
-    """Copy an array from shared memory, then close and unlink its segment."""
+def _array_from_shm(
+    handle: dict[str, Any],
+    *,
+    borrow: bool = False,
+    borrowed: list[str] | None = None,
+) -> np.ndarray:
+    """Read an array from shared memory.
+
+    With ``borrow=False`` (default) the array is copied out and the segment is
+    closed and unlinked, so nothing survives the call.
+
+    With ``borrow=True`` the returned array is a **view onto the shared
+    segment** -- no copy is made and the segment is kept alive in
+    ``_BORROWED_SEGMENTS``. The segment name is appended to *borrowed* so the
+    caller can release it later. Because the memory is shared, mutating the
+    returned array is visible to every other holder of the same segment, and
+    the array is only valid until ``release_borrowed_segments`` is called for
+    that name.
+    """
     from multiprocessing import shared_memory
 
     shm = shared_memory.SharedMemory(name=handle["name"])
+    if borrow:
+        array = np.ndarray(
+            handle["shape"],
+            dtype=np.dtype(handle["numpy_dtype"]),
+            buffer=shm.buf[: handle["nbytes"]],
+        )
+        with _BORROWED_SEGMENTS_LOCK:
+            # A duplicate name means the same segment was borrowed twice; keep
+            # the first SharedMemory object so the existing view stays mapped.
+            _BORROWED_SEGMENTS.setdefault(handle["name"], shm)
+        if borrowed is not None:
+            borrowed.append(handle["name"])
+        return array
+
     try:
         array = np.ndarray(
             handle["shape"],
@@ -59,6 +113,33 @@ def _array_from_shm(handle: dict[str, Any]) -> np.ndarray:
         shm.close()
         shm.unlink()
     return array
+
+
+def release_borrowed_segments(names: list[str] | None) -> None:
+    """Release segments handed out by ``_array_from_shm(borrow=True)``.
+
+    Unlinks before closing: removing the name always succeeds even while a
+    borrowed tensor still exports the mmap, so a segment can never be leaked
+    into ``/dev/shm`` no matter what the consumer holds.
+
+    .. warning::
+        This invalidates every tensor borrowed from these segments, exactly like
+        ``free()``. ``close()`` releases the parent memoryview the borrowed
+        arrays were sliced from, so touching a borrowed tensor afterwards is a
+        use-after-free and will segfault. Consume borrowed tensors inside
+        :func:`borrowed_diffusion_output` and copy out whatever must outlive it.
+    """
+    if not names:
+        return
+    for name in names:
+        with _BORROWED_SEGMENTS_LOCK:
+            shm = _BORROWED_SEGMENTS.pop(name, None)
+        if shm is None:
+            continue
+        with contextlib.suppress(FileNotFoundError):
+            shm.unlink()
+        with contextlib.suppress(BufferError):
+            shm.close()
 
 
 def _tensor_to_shm(
@@ -104,9 +185,22 @@ def _tensor_to_shm(
     return handle
 
 
-def _tensor_from_shm(handle: dict[str, Any]) -> torch.Tensor:
-    """Reconstruct a tensor from a shared-memory handle and free the segment."""
-    tensor = torch.from_numpy(_array_from_shm(handle))
+def _tensor_from_shm(
+    handle: dict[str, Any],
+    *,
+    borrow: bool = False,
+    borrowed: list[str] | None = None,
+) -> torch.Tensor:
+    """Reconstruct a tensor from a shared-memory handle.
+
+    ``borrow=False`` copies and frees the segment. ``borrow=True`` wraps the
+    segment without copying (see ``_array_from_shm``).
+
+    Note: a tensor packed from bfloat16 was widened to float32 for transport,
+    so restoring its dtype necessarily allocates. Such tensors still cost one
+    copy when borrowed; uint8/float32 video payloads borrow with no copy.
+    """
+    tensor = torch.from_numpy(_array_from_shm(handle, borrow=borrow, borrowed=borrowed))
     # Restore the original dtype if it differs from the numpy-compatible
     # dtype used for the SHM transfer (e.g. bfloat16 → float32 → bfloat16).
     torch_dtype_str = handle.get("torch_dtype", "")
@@ -120,6 +214,7 @@ def _tensor_from_shm(handle: dict[str, Any]) -> torch.Tensor:
 def _pack_tensor_if_large(
     val: torch.Tensor,
     d2h_stream: torch.Stream | None = None,
+    threshold: int | None = None,
 ) -> torch.Tensor | dict:
     """Replace a tensor with an SHM handle if it exceeds the threshold.
 
@@ -128,12 +223,14 @@ def _pack_tensor_if_large(
     the full batch tensor once per request. Size the decision on the storage
     to keep those views off the wire; packing copies just the view.
     """
+    if threshold is None:
+        threshold = _SHM_TENSOR_THRESHOLD
     view_bytes = val.nelement() * val.element_size()
     try:
         storage_bytes = val.untyped_storage().nbytes()
     except Exception:
         storage_bytes = view_bytes
-    if max(view_bytes, storage_bytes) > _SHM_TENSOR_THRESHOLD:
+    if max(view_bytes, storage_bytes) > threshold:
         return _tensor_to_shm(val, d2h_stream=d2h_stream)
     return val
 
@@ -145,14 +242,23 @@ def _ndarray_to_shm(array: np.ndarray) -> dict[str, Any]:
     return handle
 
 
-def _ndarray_from_shm(handle: dict[str, Any]) -> np.ndarray:
-    """Reconstruct a NumPy array from shared memory and free the segment."""
-    return _array_from_shm(handle)
+def _ndarray_from_shm(
+    handle: dict[str, Any],
+    *,
+    borrow: bool = False,
+    borrowed: list[str] | None = None,
+) -> np.ndarray:
+    """Reconstruct a NumPy array from shared memory.
+
+    Frees the segment unless *borrow* is set (see ``_array_from_shm``).
+    """
+    return _array_from_shm(handle, borrow=borrow, borrowed=borrowed)
 
 
 def _pack_value_if_large(
     val: object,
     d2h_stream: torch.Stream | None = None,
+    threshold: int | None = None,
 ) -> object:
     """Recursively replace large tensors with SHM handles.
 
@@ -162,46 +268,62 @@ def _pack_value_if_large(
     through unchanged. ``_unpack_if_shm_handle`` must mirror these shapes — keep
     the two in sync.
     """
+    if threshold is None:
+        threshold = _SHM_TENSOR_THRESHOLD
     if isinstance(val, torch.Tensor):
-        return _pack_tensor_if_large(val, d2h_stream=d2h_stream)
+        return _pack_tensor_if_large(val, d2h_stream=d2h_stream, threshold=threshold)
     if isinstance(val, np.ndarray):
-        return _ndarray_to_shm(val) if not val.dtype.hasobject and val.nbytes > _SHM_TENSOR_THRESHOLD else val
+        return _ndarray_to_shm(val) if not val.dtype.hasobject and val.nbytes > threshold else val
     if isinstance(val, dict):
-        return {key: _pack_value_if_large(value, d2h_stream=d2h_stream) for key, value in val.items()}
+        return {
+            key: _pack_value_if_large(value, d2h_stream=d2h_stream, threshold=threshold) for key, value in val.items()
+        }
     if isinstance(val, list):
-        return [_pack_value_if_large(item, d2h_stream=d2h_stream) for item in val]
+        return [_pack_value_if_large(item, d2h_stream=d2h_stream, threshold=threshold) for item in val]
     if isinstance(val, tuple):
-        return tuple(_pack_value_if_large(item, d2h_stream=d2h_stream) for item in val)
+        return tuple(_pack_value_if_large(item, d2h_stream=d2h_stream, threshold=threshold) for item in val)
     return val
 
 
-def _unpack_if_shm_handle(val: object) -> object:
+def _unpack_if_shm_handle(
+    val: object,
+    *,
+    borrow: bool = False,
+    borrowed: list[str] | None = None,
+) -> object:
     """Reconstruct tensors from SHM handles, mirroring ``_pack_value_if_large``."""
     if isinstance(val, dict) and val.get("__tensor_shm__"):
-        return _tensor_from_shm(val)
+        return _tensor_from_shm(val, borrow=borrow, borrowed=borrowed)
     if isinstance(val, dict) and val.get("__ndarray_shm__"):
-        return _ndarray_from_shm(val)
+        return _ndarray_from_shm(val, borrow=borrow, borrowed=borrowed)
     if isinstance(val, dict):
-        return {key: _unpack_if_shm_handle(value) for key, value in val.items()}
+        return {key: _unpack_if_shm_handle(value, borrow=borrow, borrowed=borrowed) for key, value in val.items()}
     if isinstance(val, list):
-        return [_unpack_if_shm_handle(item) for item in val]
+        return [_unpack_if_shm_handle(item, borrow=borrow, borrowed=borrowed) for item in val]
     if isinstance(val, tuple):
-        return tuple(_unpack_if_shm_handle(item) for item in val)
+        return tuple(_unpack_if_shm_handle(item, borrow=borrow, borrowed=borrowed) for item in val)
     return val
 
 
 def _pack_diffusion_fields(
     output: DiffusionOutput,
     d2h_stream: torch.Stream | None = None,
+    threshold: int | None = None,
 ) -> DiffusionOutput:
     if output.output is not None:
-        output.output = _pack_value_if_large(output.output, d2h_stream=d2h_stream)
+        output.output = _pack_value_if_large(output.output, d2h_stream=d2h_stream, threshold=threshold)
     if output.trajectory_latents is not None and isinstance(output.trajectory_latents, torch.Tensor):
-        output.trajectory_latents = _pack_tensor_if_large(output.trajectory_latents, d2h_stream=d2h_stream)
+        output.trajectory_latents = _pack_tensor_if_large(
+            output.trajectory_latents, d2h_stream=d2h_stream, threshold=threshold
+        )
     if output.trajectory_timesteps is not None and isinstance(output.trajectory_timesteps, torch.Tensor):
-        output.trajectory_timesteps = _pack_tensor_if_large(output.trajectory_timesteps, d2h_stream=d2h_stream)
+        output.trajectory_timesteps = _pack_tensor_if_large(
+            output.trajectory_timesteps, d2h_stream=d2h_stream, threshold=threshold
+        )
     if output.trajectory_log_probs is not None and isinstance(output.trajectory_log_probs, torch.Tensor):
-        output.trajectory_log_probs = _pack_tensor_if_large(output.trajectory_log_probs, d2h_stream=d2h_stream)
+        output.trajectory_log_probs = _pack_tensor_if_large(
+            output.trajectory_log_probs, d2h_stream=d2h_stream, threshold=threshold
+        )
     return output
 
 
@@ -212,6 +334,7 @@ def _is_rpc_result_envelope(output: object) -> bool:
 def pack_diffusion_output_shm(
     output: object,
     d2h_stream: torch.Stream | None = None,
+    threshold: int | None = None,
 ) -> object:
     """Replace large tensors in diffusion worker outputs with SHM handles.
 
@@ -223,64 +346,112 @@ def pack_diffusion_output_shm(
 
     If *d2h_stream* is provided, D2H copies use that stream (non-blocking on
     the default stream).  The caller must synchronize *d2h_stream* afterward.
+
+    *threshold* overrides the byte size above which a tensor moves through
+    shared memory; it defaults to ``_SHM_TENSOR_THRESHOLD``. Callers holding an
+    ``OmniDiffusionConfig`` should pass
+    ``config.video_output_transport.shm_threshold_bytes``.
     """
     if isinstance(output, DiffusionOutput):
-        return _pack_diffusion_fields(output, d2h_stream=d2h_stream)
+        return _pack_diffusion_fields(output, d2h_stream=d2h_stream, threshold=threshold)
 
     # DP multi-concurrency: {"dp_rank": int, "output": DiffusionOutput}
     if isinstance(output, dict) and "dp_rank" in output and "output" in output:
         inner = output["output"]
         if isinstance(inner, DiffusionOutput):
-            output["output"] = _pack_diffusion_fields(inner, d2h_stream=d2h_stream)
+            output["output"] = _pack_diffusion_fields(inner, d2h_stream=d2h_stream, threshold=threshold)
         return output
 
     if _is_rpc_result_envelope(output):
         result = output.get("result")
-        output["result"] = pack_diffusion_output_shm(result, d2h_stream=d2h_stream)
+        output["result"] = pack_diffusion_output_shm(result, d2h_stream=d2h_stream, threshold=threshold)
         return output
 
     result = getattr(output, "result", None)
     if isinstance(result, DiffusionOutput):
-        output.result = _pack_diffusion_fields(result, d2h_stream=d2h_stream)
+        output.result = _pack_diffusion_fields(result, d2h_stream=d2h_stream, threshold=threshold)
 
     runner_outputs = getattr(output, "runner_outputs", None)
     if isinstance(runner_outputs, list):
         for runner_output in runner_outputs:
-            pack_diffusion_output_shm(runner_output, d2h_stream=d2h_stream)
+            pack_diffusion_output_shm(runner_output, d2h_stream=d2h_stream, threshold=threshold)
     return output
 
 
-def _unpack_diffusion_fields(output: DiffusionOutput) -> DiffusionOutput:
-    output.output = _unpack_if_shm_handle(output.output)
-    output.trajectory_latents = _unpack_if_shm_handle(output.trajectory_latents)
-    output.trajectory_timesteps = _unpack_if_shm_handle(output.trajectory_timesteps)
-    output.trajectory_log_probs = _unpack_if_shm_handle(output.trajectory_log_probs)
+def _unpack_diffusion_fields(
+    output: DiffusionOutput,
+    *,
+    borrow: bool = False,
+    borrowed: list[str] | None = None,
+) -> DiffusionOutput:
+    output.output = _unpack_if_shm_handle(output.output, borrow=borrow, borrowed=borrowed)
+    output.trajectory_latents = _unpack_if_shm_handle(output.trajectory_latents, borrow=borrow, borrowed=borrowed)
+    output.trajectory_timesteps = _unpack_if_shm_handle(output.trajectory_timesteps, borrow=borrow, borrowed=borrowed)
+    output.trajectory_log_probs = _unpack_if_shm_handle(output.trajectory_log_probs, borrow=borrow, borrowed=borrowed)
     return output
 
 
-def unpack_diffusion_output_shm(output: object) -> object:
-    """Reconstruct tensors from SHM handles in diffusion worker outputs."""
+def unpack_diffusion_output_shm(
+    output: object,
+    *,
+    borrow: bool = False,
+    borrowed: list[str] | None = None,
+) -> object:
+    """Reconstruct tensors from SHM handles in diffusion worker outputs.
+
+    By default each payload is copied out of shared memory and its segment is
+    unlinked. With ``borrow=True`` the tensors alias the shared segments
+    instead (no copy) and the touched segment names are collected into
+    *borrowed*, which the caller must hand to ``release_borrowed_segments``.
+    Prefer :func:`borrowed_diffusion_output`, which does that automatically.
+    """
     if isinstance(output, DiffusionOutput):
-        return _unpack_diffusion_fields(output)
+        return _unpack_diffusion_fields(output, borrow=borrow, borrowed=borrowed)
 
     # DP multi-concurrency: {"dp_rank": int, "output": DiffusionOutput}
     if isinstance(output, dict) and "dp_rank" in output and "output" in output:
         inner = output["output"]
         if isinstance(inner, DiffusionOutput):
-            output["output"] = _unpack_diffusion_fields(inner)
+            output["output"] = _unpack_diffusion_fields(inner, borrow=borrow, borrowed=borrowed)
         return output
 
     if _is_rpc_result_envelope(output):
         result = output.get("result")
-        output["result"] = unpack_diffusion_output_shm(result)
+        output["result"] = unpack_diffusion_output_shm(result, borrow=borrow, borrowed=borrowed)
         return output
 
     result = getattr(output, "result", None)
     if isinstance(result, DiffusionOutput):
-        output.result = _unpack_diffusion_fields(result)
+        output.result = _unpack_diffusion_fields(result, borrow=borrow, borrowed=borrowed)
 
     runner_outputs = getattr(output, "runner_outputs", None)
     if isinstance(runner_outputs, list):
         for runner_output in runner_outputs:
-            unpack_diffusion_output_shm(runner_output)
+            unpack_diffusion_output_shm(runner_output, borrow=borrow, borrowed=borrowed)
     return output
+
+
+@contextlib.contextmanager
+def borrowed_diffusion_output(output: object, *, borrow: bool = True):
+    """Yield *output* with its SHM payloads materialised, releasing on exit.
+
+    This is the supported entry point for zero-copy consumption. Every borrowed
+    segment is released on exit, including on error, so a segment can never
+    outlive its consumer and leak ``/dev/shm``.
+
+    .. warning::
+        With ``borrow=True`` the yielded tensors alias shared memory and become
+        invalid when the block exits -- using them afterwards is a
+        use-after-free and will segfault. Copy out (``.clone()``) anything that
+        must outlive the block.
+
+    Pass ``borrow=False`` (e.g. ``borrow=config.video_output_transport.zero_copy``)
+    to get the copying behaviour through the same call site; the block then
+    yields private copies that stay valid afterwards and the release step is a
+    no-op.
+    """
+    borrowed: list[str] = []
+    try:
+        yield unpack_diffusion_output_shm(output, borrow=borrow, borrowed=borrowed)
+    finally:
+        release_borrowed_segments(borrowed)

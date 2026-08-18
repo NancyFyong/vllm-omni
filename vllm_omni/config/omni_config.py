@@ -558,6 +558,8 @@ class _DiffusionConfigProjection:
     cache_strategy: str = "none"
     cache_backend: str = "none"
     cache_config: Any = field(default_factory=dict)
+    # Mapping or VideoOutputTransportConfig; normalized in __post_init__.
+    video_output_transport: Any = field(default_factory=dict)
     enable_cache_dit_summary: bool = False
     diffusion_kv_mode: DiffusionKVCacheMode = DiffusionKVCacheMode.DENSE_LEGACY
     enable_prompt_embed_cache: bool = False
@@ -632,6 +634,7 @@ class _DiffusionConfigProjection:
             AttentionConfig,
             DiffusionCacheConfig,
             TransformerConfig,
+            VideoOutputTransportConfig,
             build_attention_config,
             parse_kv_cache_skip_selector,
         )
@@ -671,6 +674,11 @@ class _DiffusionConfigProjection:
             self.cache_config = DiffusionCacheConfig.from_dict(dict(self.cache_config))
         elif not isinstance(self.cache_config, DiffusionCacheConfig):
             self.cache_config = DiffusionCacheConfig()
+
+        if isinstance(self.video_output_transport, Mapping):
+            self.video_output_transport = VideoOutputTransportConfig(**dict(self.video_output_transport))
+        elif not isinstance(self.video_output_transport, VideoOutputTransportConfig):
+            self.video_output_transport = VideoOutputTransportConfig()
 
         self._propagate_quantization_from_tf_config(self.tf_model_config)
         if self.quantization_config is not None:

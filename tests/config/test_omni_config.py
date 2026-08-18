@@ -966,6 +966,51 @@ def test_diffusion_config_preserves_existing_coercion_hooks():
     assert cfg.max_cpu_loras == 1
 
 
+def test_diffusion_config_normalizes_video_output_transport_from_mapping():
+    """YAML/deploy configs pass a mapping; it must become a real config object.
+
+    Without the __post_init__ coercion the field stays a plain dict and
+    ``OmniDiffusionConfig`` consumers (worker threshold lookup) silently fall
+    back to the default, making the deploy setting a no-op.
+    """
+    from vllm_omni.diffusion.data import VideoOutputTransportConfig
+
+    cfg = omni_config_module._DiffusionConfigProjection(
+        video_output_transport={"transport_mode": "shared_memory", "shm_threshold_bytes": 8192},
+    )
+
+    assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
+    assert cfg.video_output_transport.transport_mode == "shared_memory"
+    assert cfg.video_output_transport.shm_threshold_bytes == 8192
+    assert cfg.video_output_transport.zero_copy is True
+
+
+def test_diffusion_config_defaults_video_output_transport_to_copy_mode():
+    from vllm_omni.diffusion.data import VideoOutputTransportConfig
+
+    cfg = omni_config_module._DiffusionConfigProjection()
+
+    assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
+    assert cfg.video_output_transport.transport_mode == "copy"
+    assert cfg.video_output_transport.zero_copy is False
+
+
+def test_diffusion_config_rejects_invalid_video_output_transport():
+    """A typo in a deploy config must fail loudly, not degrade silently."""
+    with pytest.raises((ValueError, ValidationError)):
+        omni_config_module._DiffusionConfigProjection(video_output_transport={"transport_mode": "zerocopy"})
+
+
+def test_video_output_transport_is_bridged_to_omni_diffusion_config():
+    """enrich_config maps projection fields by name; the field must exist on both."""
+    from vllm_omni.diffusion.data import OmniDiffusionConfig
+
+    projection_fields = {f.name for f in fields(omni_config_module._DiffusionConfigProjection)}
+    diffusion_fields = {f.name for f in fields(OmniDiffusionConfig)}
+
+    assert "video_output_transport" in projection_fields & diffusion_fields
+
+
 def test_diffusion_config_from_kwargs_reuses_legacy_normalization(monkeypatch):
     monkeypatch.setenv("DIFFUSION_CACHE_BACKEND", "TEA_CACHE")
 

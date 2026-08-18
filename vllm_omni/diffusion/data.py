@@ -8,7 +8,7 @@ import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import diffusers
 import huggingface_hub
@@ -602,6 +602,47 @@ def resolve_model_class_name(
 
 
 @dataclass
+class VideoOutputTransportConfig:
+    """Transport strategy for large diffusion outputs (RFC #6212, workstream 4).
+
+    Replaces the module-level ``ipc._SHM_TENSOR_THRESHOLD`` constant with
+    explicit per-deployment configuration, and selects how the read side of a
+    shared-memory hop obtains its tensors.
+    """
+
+    # How a consumer reads tensors that were moved through shared memory:
+    #   "copy"          - copy out of the segment and unlink it immediately.
+    #                     Historical behaviour and the default: ownership is
+    #                     trivially correct because the segment dies on read.
+    #   "shared_memory" - map the segment and wrap it without copying, for
+    #                     co-located consumers (e.g. verl-omni rollout workers
+    #                     on the same host). The reader then owns the segment
+    #                     and must release it; use
+    #                     ``ipc.borrowed_diffusion_output`` so a segment cannot
+    #                     outlive its consumer and leak /dev/shm.
+    transport_mode: str = "copy"
+
+    # Tensors whose view *or* backing storage exceeds this many bytes travel
+    # through shared memory instead of being pickled through the MessageQueue.
+    shm_threshold_bytes: int = 1_000_000
+
+    VALID_TRANSPORT_MODES: ClassVar[frozenset[str]] = frozenset({"copy", "shared_memory"})
+
+    def __post_init__(self):
+        if self.transport_mode not in self.VALID_TRANSPORT_MODES:
+            raise ValueError(
+                f"transport_mode must be one of {sorted(self.VALID_TRANSPORT_MODES)}, got {self.transport_mode!r}"
+            )
+        if self.shm_threshold_bytes <= 0:
+            raise ValueError(f"shm_threshold_bytes must be positive, got {self.shm_threshold_bytes}")
+
+    @property
+    def zero_copy(self) -> bool:
+        """True when the read side should borrow segments instead of copying."""
+        return self.transport_mode == "shared_memory"
+
+
+@dataclass
 class OmniDiffusionConfig:
     # Model and path configuration (for convenience)
     stage_id: int = 0
@@ -856,6 +897,10 @@ class OmniDiffusionConfig:
     # a wave.  Improves fused forward batch sizes under bursty HTTP ingress.
     # 0 disables admission (default; no added latency).
     request_batch_max_wait_ms: float = 0.0
+
+    # Large-output transport strategy (shared-memory threshold, zero-copy
+    # handoff to co-located consumers). See VideoOutputTransportConfig.
+    video_output_transport: VideoOutputTransportConfig = field(default_factory=VideoOutputTransportConfig)
 
     # Supplementary model specific parameters
     extras: dict[str, Any] = Field(default_factory=dict)

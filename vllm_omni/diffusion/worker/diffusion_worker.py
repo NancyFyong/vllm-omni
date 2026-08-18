@@ -40,6 +40,7 @@ from vllm_omni.diffusion.data import (
     OmniDiffusionConfig,
     OmniSleepTask,
     OmniWakeTask,
+    VideoOutputTransportConfig,
 )
 from vllm_omni.diffusion.diffusion_kv.metadata import DiffusionKVMetadata
 from vllm_omni.diffusion.distributed.parallel_state import (
@@ -841,6 +842,11 @@ class CustomPipelineWorkerExtension:
 class WorkerProc:
     """Wrapper that runs one Worker in a separate process."""
 
+    # Resolved from od_config.video_output_transport in __init__. Declared here
+    # so partially constructed instances (object.__new__ in tests) still read a
+    # valid value; None means "use the ipc module default threshold".
+    _shm_threshold_bytes: int | None = None
+
     def __init__(
         self,
         od_config: OmniDiffusionConfig,
@@ -853,6 +859,14 @@ class WorkerProc:
         self.od_config = od_config
         self.gpu_id = gpu_id
         self.wake_event = wake_event
+
+        # Byte size above which outputs travel through shared memory instead of
+        # the MessageQueue. ``None`` falls back to the ipc module default, which
+        # also covers stub configs used in tests.
+        transport_config = getattr(od_config, "video_output_transport", None)
+        self._shm_threshold_bytes = (
+            transport_config.shm_threshold_bytes if isinstance(transport_config, VideoOutputTransportConfig) else None
+        )
 
         # Inter-process Communication
         self.context = zmq.Context(io_threads=2)
@@ -947,7 +961,7 @@ class WorkerProc:
 
         # Sync path (original, or async fallback).
         try:
-            pack_diffusion_output_shm(output)
+            pack_diffusion_output_shm(output, threshold=self._shm_threshold_bytes)
         except Exception as e:
             if hasattr(output, "output"):
                 logger.warning("SHM pack failed for model output: %s", e)
@@ -971,7 +985,7 @@ class WorkerProc:
                 # writing the output tensors before the side stream reads.
                 if gpu_event is not None:
                     d2h_stream.wait_event(gpu_event)
-                pack_diffusion_output_shm(output, d2h_stream=d2h_stream)
+                pack_diffusion_output_shm(output, d2h_stream=d2h_stream, threshold=self._shm_threshold_bytes)
                 d2h_stream.synchronize()
 
                 self._enqueue_result(

@@ -7,6 +7,7 @@ import torch
 
 from vllm_omni.diffusion.data import DiffusionOutput
 from vllm_omni.diffusion.ipc import (
+    _SHM_TENSOR_THRESHOLD,
     _pack_diffusion_fields,
     _pack_tensor_if_large,
     _pack_value_if_large,
@@ -43,7 +44,9 @@ class TestPackTensorIfLargeWithD2hStream:
         tensor = torch.zeros(1)
         d2h = mocker.MagicMock()
         _pack_value_if_large(tensor, d2h_stream=d2h)
-        mock_pack.assert_called_once_with(tensor, d2h_stream=d2h)
+        # _pack_value_if_large resolves an unset threshold to the module default
+        # before recursing, so the leaf call sees a concrete byte count.
+        mock_pack.assert_called_once_with(tensor, d2h_stream=d2h, threshold=_SHM_TENSOR_THRESHOLD)
 
     def test_pack_value_if_large_passes_stream_through_dict(self, mocker):
         """d2h_stream propagates through dict container packing."""
@@ -93,7 +96,7 @@ class TestPackDiffusionFieldsWithD2hStream:
         d2h = mocker.MagicMock()
         out = DiffusionOutput(output=torch.zeros(1))
         _pack_diffusion_fields(out, d2h_stream=d2h)
-        mock_pack_value.assert_called_once_with(torch.zeros(1), d2h_stream=d2h)
+        mock_pack_value.assert_called_once_with(torch.zeros(1), d2h_stream=d2h, threshold=None)
 
     def test_trajectory_fields_packed_with_stream(self, mocker):
         mock_pack_tensor = mocker.patch(
@@ -120,7 +123,7 @@ class TestPackDiffusionOutputShmWithD2hStream:
         d2h = mocker.MagicMock()
         out = DiffusionOutput()
         pack_diffusion_output_shm(out, d2h_stream=d2h)
-        mock_pack_fields.assert_called_once_with(out, d2h_stream=d2h)
+        mock_pack_fields.assert_called_once_with(out, d2h_stream=d2h, threshold=None)
 
     def test_rpc_envelope_path_with_stream(self, mocker):
         mock_pack_fields = mocker.patch(
@@ -135,6 +138,7 @@ class TestPackDiffusionOutputShmWithD2hStream:
         mock_pack_fields.assert_called_once_with(
             result,
             d2h_stream=d2h,
+            threshold=None,
         )
 
     @pytest.mark.parametrize("wrapped_in_rpc_envelope", [False, True])
@@ -147,7 +151,7 @@ class TestPackDiffusionOutputShmWithD2hStream:
         tagged = {"dp_rank": 1, "output": result}
         value = {"type": "diffusion_rpc_result", "result": tagged} if wrapped_in_rpc_envelope else tagged
         pack_diffusion_output_shm(value, d2h_stream=d2h)
-        mock_pack_fields.assert_called_once_with(result, d2h_stream=d2h)
+        mock_pack_fields.assert_called_once_with(result, d2h_stream=d2h, threshold=None)
 
     def test_runner_output_path_with_stream(self, mocker):
         mock_pack_fields = mocker.patch(
@@ -168,4 +172,5 @@ class TestPackDiffusionOutputShmWithD2hStream:
         mock_pack_fields.assert_called_once_with(
             result,
             d2h_stream=d2h,
+            threshold=None,
         )
