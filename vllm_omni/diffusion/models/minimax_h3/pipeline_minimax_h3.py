@@ -45,6 +45,7 @@ from vllm_omni.diffusion.models.interface import (
 )
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.offloader import OffloadPlan
+from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import (
     DiffusionPipelineProfilerMixin,
 )
@@ -201,9 +202,15 @@ def _minimax_h3_post_process(output, output_type: str = "np"):
     if output_type == "latent":
         return output
     if output_type == "np":
-        video = video.detach().float().cpu().permute(0, 2, 3, 4, 1).clamp(0, 1).numpy()
+        if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
+            # Device-reduced fast path (RFC #6212): the worker already produced
+            # uint8 [B, F, H, W, C] frames, so skip the permute/clamp/float that
+            # the raw [B, C, F, H, W] decode output needs.
+            video = list(video.detach().cpu().numpy())
+        else:
+            video = video.detach().float().cpu().permute(0, 2, 3, 4, 1).clamp(0, 1).numpy()
+            video = [sample for sample in video]
         audio = audio.detach().float().cpu().numpy()
-        video = [sample for sample in video]
     return {
         "video": video,
         "audio": audio,
@@ -1863,6 +1870,17 @@ class MiniMaxH3Pipeline(
             audios.append(audio)
         video = torch.cat(videos, dim=0)
         audio = torch.cat(audios, dim=0)
+        transport = getattr(self.od_config, "video_output_transport", None)
+        if (
+            transport is not None
+            and transport.reduce_video_on_device
+            and getattr(sampling, "output_type", None) in (None, "np")
+        ):
+            # RFC #6212: reduce the decoded [B,C,F,H,W] video to uint8
+            # [B,F,H,W,C] on device before the D2H copy. The decode output is
+            # already in [0, 1] (post_process clamps without denormalizing), so
+            # skip denormalization. Audio is untouched.
+            video = reduce_video_to_uint8_frames(video, do_denormalize=False)
         return DiffusionOutput(
             output=(video, audio),
             post_process_func=get_minimax_h3_post_process_func(self.od_config),
