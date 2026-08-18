@@ -961,6 +961,16 @@ class AsyncOmniEngine:
             normalized_kwargs.get("cache_config", None),
         )
 
+        # CLI passes nested configs as JSON strings (like cache_config); the dict
+        # is then coerced into VideoOutputTransportConfig by OmniDiffusionConfig.
+        video_output_transport = normalized_kwargs.get("video_output_transport", None)
+        if isinstance(video_output_transport, str):
+            try:
+                video_output_transport = json.loads(video_output_transport)
+            except (ValueError, TypeError):
+                logger.warning("Invalid video_output_transport JSON, using defaults.")
+                video_output_transport = None
+
         parallel_config = normalized_kwargs.get("parallel_config")
         if isinstance(parallel_config, dict):
             parallel_config = DiffusionParallelConfig.from_dict(parallel_config)
@@ -1031,7 +1041,7 @@ class AsyncOmniEngine:
             "additional_config": kwargs.get("additional_config", None),
             "step_execution": kwargs.get("step_execution", False),
             "request_batch_max_wait_ms": kwargs.get("request_batch_max_wait_ms", 0.0),
-            "video_output_transport": kwargs.get("video_output_transport", None),
+            "video_output_transport": video_output_transport,
             "vae_use_slicing": kwargs.get("vae_use_slicing", False),
             "vae_use_tiling": kwargs.get("vae_use_tiling", False),
             "cache_backend": cache_backend,

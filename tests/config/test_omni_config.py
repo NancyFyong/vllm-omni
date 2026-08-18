@@ -1011,6 +1011,29 @@ def test_video_output_transport_is_bridged_to_omni_diffusion_config():
     assert "video_output_transport" in projection_fields & diffusion_fields
 
 
+def test_video_output_transport_cli_json_string_is_wired():
+    """CLI wiring: the flag exists on OrchestratorArgs and a JSON string coerces.
+
+    The CLI passes nested configs as JSON strings (like cache_config);
+    async_omni_engine ``json.loads`` the string, then OmniDiffusionConfig must
+    coerce the resulting dict into a real VideoOutputTransportConfig. Without
+    the OrchestratorArgs field the ``--video-output-transport`` flag would not
+    exist, and without the coercion the parsed dict would be a silent no-op.
+    """
+    import json
+
+    from vllm_omni.diffusion.data import OmniDiffusionConfig, VideoOutputTransportConfig
+    from vllm_omni.engine.arg_utils import OrchestratorArgs
+
+    assert "video_output_transport" in {f.name for f in fields(OrchestratorArgs)}
+
+    parsed = json.loads('{"reduce_video_on_device": true, "shm_threshold_bytes": 4096}')
+    cfg = OmniDiffusionConfig(model="x", video_output_transport=parsed)
+    assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
+    assert cfg.video_output_transport.reduce_video_on_device is True
+    assert cfg.video_output_transport.shm_threshold_bytes == 4096
+
+
 def test_diffusion_config_from_kwargs_reuses_legacy_normalization(monkeypatch):
     monkeypatch.setenv("DIFFUSION_CACHE_BACKEND", "TEA_CACHE")
 
