@@ -36,6 +36,7 @@ from vllm_omni.diffusion.models.lingbot_video.request_utils import (
 )
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.schedulers import FlowUniPCMultistepScheduler
+from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
 from vllm_omni.errors import OmniClientError
@@ -295,7 +296,12 @@ def get_lingbot_video_post_process_func(od_config: OmniDiffusionConfig):
             and output_type != "latent"
             and (output_type == "np" or output_key == "image")
         ):
-            frames = frames.float().cpu().numpy()
+            if frames.dtype == torch.uint8:
+                # RFC #6212: a device-reduced video is already uint8; keep it
+                # (widening to float would make the encoder read 0..255 as 0..1).
+                frames = frames.cpu().numpy()
+            else:
+                frames = frames.float().cpu().numpy()
         return {output_key: frames} if output_key is not None else frames
 
     return post_process_func
@@ -539,7 +545,7 @@ class LingBotVideoPipeline(
         return latents.float() / std_inv + mean
 
     @torch.no_grad()
-    def _decode_latents(self, latents: torch.Tensor) -> torch.Tensor:
+    def _decode_latents(self, latents: torch.Tensor, *, reduce_to_uint8: bool = False) -> torch.Tensor:
         vae_device = _module_device(self.vae)
         vae_dtype = _module_dtype(self.vae)
         vae_latents = self._dit_latent_to_vae(latents).to(device=vae_device, dtype=torch.float32)
@@ -551,6 +557,12 @@ class LingBotVideoPipeline(
         with torch.autocast("cuda", dtype=autocast_dtype or torch.bfloat16, enabled=autocast_dtype is not None):
             decoded = self.vae.decode(vae_latents)
         frames = decoded[0] if isinstance(decoded, tuple) else decoded.sample
+        if reduce_to_uint8:
+            # RFC #6212: reduce [B,C,F,H,W] -> uint8 [B,F,H,W,C] on device before
+            # the D2H copy. LingBot denormalizes as clamp(-1,1) then (x+1)/2,
+            # which equals reduce_video_to_uint8_frames' (x*0.5+0.5).clamp(0,1).
+            frames = reduce_video_to_uint8_frames(frames)
+            return frames[0].cpu()
         frames = frames.float().clamp_(-1, 1)
         frames = (frames + 1.0) / 2.0
         frames = frames.permute(0, 2, 3, 4, 1).cpu()
@@ -793,7 +805,14 @@ class LingBotVideoPipeline(
             if vae_offloaded and vae_restore_device is not None:
                 self.vae.to(device=vae_restore_device)
                 torch.accelerator.empty_cache()
-            decoded = self._decode_latents(latents)
+            transport = getattr(self.od_config, "video_output_transport", None)
+            reduce_now = (
+                output_type == "np"
+                and mode is not LingBotGenerationMode.T2I
+                and transport is not None
+                and transport.reduce_video_on_device
+            )
+            decoded = self._decode_latents(latents, reduce_to_uint8=reduce_now)
             if mode is LingBotGenerationMode.T2I:
                 if decoded.shape[0] != 1:
                     raise RuntimeError(
