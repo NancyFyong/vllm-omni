@@ -22,6 +22,7 @@ from vllm_omni.diffusion.distributed.parallel_state import (
 )
 from vllm_omni.diffusion.models.interface import SupportsComponentDiscovery
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
+from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch, split_diffusion_output_by_request
 from vllm_omni.platforms import current_omni_platform
@@ -556,7 +557,16 @@ class LTXRuntime(
             )
 
         if video.numel() > 0:
-            video = self.video_processor.postprocess_video(video, output_type=output_type)
+            transport = getattr(self.od_config, "video_output_transport", None)
+            if transport is not None and transport.reduce_video_on_device and output_type == "np":
+                # RFC #6212: reduce the decoded [B,C,F,H,W] video to uint8
+                # [B,F,H,W,C] on device before the D2H copy. The engine
+                # post_process packages the video tensor as-is, so the uint8
+                # frames flow straight through instead of the float postprocess
+                # output (encoder-identical after the /255 round-trip).
+                video = reduce_video_to_uint8_frames(video)
+            else:
+                video = self.video_processor.postprocess_video(video, output_type=output_type)
         generated_mel = self.audio_vae.decode(audio_latents.to(self.audio_vae.dtype), return_dict=False)[0]
         audio = self.vocoder(generated_mel)
         return self._make_output((video, audio))
