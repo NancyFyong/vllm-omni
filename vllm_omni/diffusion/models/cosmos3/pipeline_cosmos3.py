@@ -68,6 +68,7 @@ from vllm_omni.diffusion.models.schedulers.scheduling_flow_match_euler_discrete 
 from vllm_omni.diffusion.models.schedulers.scheduling_flow_unipc_multistep import (
     FlowUniPCMultistepScheduler,
 )
+from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
@@ -693,10 +694,18 @@ def get_cosmos3_post_process_func(od_config: OmniDiffusionConfig):
                     "metadata": envelope_public_metadata,
                 }
             return processed_image
-        guardrails_enabled = is_guardrails_enabled(od_config, sampling_params)
-        if guardrails_enabled:
-            video = check_video_safety(video)
-        processed_video = video_processor.postprocess_video(video, output_type=output_type)
+        if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
+            # Device-reduced fast path (RFC #6212): the worker already produced
+            # uint8 [B, F, H, W, C] frames. The worker only reduces when
+            # guardrails are disabled (the safety check must inspect the float
+            # video), so it is safe to skip both check_video_safety and the
+            # denormalize here.
+            processed_video = video.detach().cpu().numpy()
+        else:
+            guardrails_enabled = is_guardrails_enabled(od_config, sampling_params)
+            if guardrails_enabled:
+                video = check_video_safety(video)
+            processed_video = video_processor.postprocess_video(video, output_type=output_type)
         if audio is None:
             if pending_action is not None:
                 return {
@@ -3689,6 +3698,22 @@ class Cosmos3OmniDiffusersPipeline(
             logger.info("Decoding video...")
         decode_start = time.time()
         video = self._decode_latents(latents)
+        if not is_t2i and not action_enabled:
+            from .guardrails import is_guardrails_enabled
+
+            transport = getattr(self.od_config, "video_output_transport", None)
+            if (
+                transport is not None
+                and transport.reduce_video_on_device
+                and getattr(sp, "output_type", None) in (None, "np")
+                and not is_guardrails_enabled(self.od_config, sp)
+            ):
+                # RFC #6212: reduce the decoded [B,C,F,H,W] video to uint8
+                # [B,F,H,W,C] on device before the D2H copy. Only when guardrails
+                # are disabled -- the safety check runs on the float video in
+                # post_process, so reducing early would bypass it. Image (t2i)
+                # and action outputs keep the float path.
+                video = reduce_video_to_uint8_frames(video)
         if _is_rank_zero():
             logger.info("Video decoded in %.2fs", time.time() - decode_start)
             if not sound_enabled:
