@@ -14,6 +14,7 @@ import torch
 from diffusers.schedulers.scheduling_flow_match_euler_discrete import FlowMatchEulerDiscreteScheduler
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.video_processor import VideoProcessor
+from PIL import Image
 from torch import nn
 from transformers import AutoConfig, ByT5Tokenizer, Qwen2_5_VLTextModel, Qwen2Tokenizer
 from vllm.model_executor.models.utils import AutoWeightsLoader
@@ -30,6 +31,7 @@ from vllm_omni.diffusion.models.hunyuan_video.hunyuan_video_15_transformer impor
 from vllm_omni.diffusion.models.interface import SupportsComponentDiscovery
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
+from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
@@ -77,6 +79,17 @@ def get_hunyuan_video_15_post_process_func(od_config: OmniDiffusionConfig):
     def post_process_func(video: torch.Tensor, output_type: str = "pil"):
         if output_type == "latent":
             return video
+        if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
+            # Device-reduced fast path (RFC #6212): the worker already produced
+            # uint8 [B, F, H, W, C] frames before the D2H copy. Skip the diffusers
+            # denormalize/scale (which assumes float [B, C, F, H, W] and would
+            # corrupt uint8 data) and materialize the same output the float path
+            # would -- Image.fromarray on uint8 matches numpy_to_pil.
+            frames = video.cpu().numpy()
+            if output_type == "np":
+                return frames
+            per_video = [[Image.fromarray(frame) for frame in single] for single in frames]
+            return per_video[0] if per_video else per_video
         result = video_processor.postprocess_video(video, output_type=output_type)
         # postprocess_video returns List[List[PIL.Image]] (batch x frames).
         # Flatten to a flat list of PIL Images for the serving endpoint.
@@ -547,6 +560,11 @@ class HunyuanVideo15Pipeline(
         else:
             latents = latents.to(self.vae.dtype) / self.vae.config.scaling_factor
             output = self.vae.decode(latents, return_dict=False)[0]
+            if self.od_config.video_output_transport.reduce_video_on_device:
+                # RFC #6212: shrink the Hop-1 D2H payload 4x by reducing to uint8
+                # [B, F, H, W, C] on device before the copy. post_process detects
+                # the uint8 tensor and passes it through.
+                output = reduce_video_to_uint8_frames(output)
 
         return DiffusionOutput(output=output)
 
