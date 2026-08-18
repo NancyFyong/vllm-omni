@@ -634,6 +634,14 @@ class VideoOutputTransportConfig:
     # transparently fall back to the float path.
     reduce_video_on_device: bool = False
 
+    # Hop 2 (engine -> HTTP client) MP4 encoder options (RFC #6212, workstream 2).
+    # Converges the default that was previously hardcoded and duplicated across
+    # the serving_video encode sites into first-class config, so a deployment can
+    # tune the encoder (a different preset, thread count, or a hardware encoder)
+    # without editing the API layer. A per-request
+    # ``extra_params["video_codec_options"]`` still overrides this.
+    video_codec_options: dict[str, str] = field(default_factory=lambda: {"preset": "ultrafast", "threads": "0"})
+
     VALID_TRANSPORT_MODES: ClassVar[frozenset[str]] = frozenset({"copy", "shared_memory"})
 
     def __post_init__(self):
@@ -643,6 +651,8 @@ class VideoOutputTransportConfig:
             )
         if self.shm_threshold_bytes <= 0:
             raise ValueError(f"shm_threshold_bytes must be positive, got {self.shm_threshold_bytes}")
+        if not isinstance(self.video_codec_options, dict):
+            raise ValueError(f"video_codec_options must be a dict, got {type(self.video_codec_options).__name__}")
 
     @property
     def zero_copy(self) -> bool:

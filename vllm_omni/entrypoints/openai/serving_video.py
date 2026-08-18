@@ -306,6 +306,25 @@ class OmniOpenAIServingVideo:
             peak_memory_mb=self._extract_peak_memory_mb(result),
         )
 
+    def _resolve_video_codec_options(self, request: VideoGenerationRequest) -> dict:
+        """Hop 2 MP4 encoder options (RFC #6212, WS2).
+
+        Precedence: per-request ``extra_params["video_codec_options"]`` overrides
+        the deployment's ``video_output_transport.video_codec_options``, which in
+        turn defaults to the historical ``{"preset": "ultrafast", "threads": "0"}``.
+        This replaces the constant that was duplicated across the encode sites.
+        """
+        get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
+        od_config = get_od_config() if callable(get_od_config) else getattr(self._engine_client, "od_config", None)
+        transport = getattr(od_config, "video_output_transport", None) if od_config is not None else None
+        configured = getattr(transport, "video_codec_options", None)
+        codec_options = (
+            dict(configured) if isinstance(configured, dict) and configured else {"preset": "ultrafast", "threads": "0"}
+        )
+        if isinstance(request.extra_params, dict) and "video_codec_options" in request.extra_params:
+            codec_options = request.extra_params["video_codec_options"]
+        return codec_options
+
     async def generate_videos(
         self,
         request: VideoGenerationRequest,
@@ -323,10 +342,7 @@ class OmniOpenAIServingVideo:
             reference_audio=reference_audio,
         )
 
-        video_codec_options = {"preset": "ultrafast", "threads": "0"}
-        if request.extra_params is not None and isinstance(request.extra_params, dict):
-            if "video_codec_options" in request.extra_params:
-                video_codec_options = request.extra_params["video_codec_options"]
+        video_codec_options = self._resolve_video_codec_options(request)
 
         _t_encode_start = time.perf_counter()
         video_data = [
@@ -380,10 +396,7 @@ class OmniOpenAIServingVideo:
             )
         audio = artifacts.audios[0]
 
-        video_codec_options = {"preset": "ultrafast", "threads": "0"}
-        if request.extra_params is not None and isinstance(request.extra_params, dict):
-            if "video_codec_options" in request.extra_params:
-                video_codec_options = request.extra_params["video_codec_options"]
+        video_codec_options = self._resolve_video_codec_options(request)
 
         action = artifacts.actions[0]
         if action is not None and isinstance(artifacts.videos[0], dict):
