@@ -2,11 +2,9 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """GPU correctness/size tests for device-side video reduction.
 
-These guard the root-cause optimization from RFC #6212: reducing a decoded
-video tensor to uint8 frames *on the GPU before the D2H copy*. The reduction
-must be byte-identical to the current production output (SHM widens bf16->f32,
-then diffusers postprocess, then the API server's ``*255`` rounding), otherwise
-enabling it would silently change pixels.
+The reduction must be byte-identical to the current production output (SHM
+widens bf16->f32, then diffusers postprocess, then the API server's ``*255``
+rounding), otherwise enabling it would silently change pixels.
 """
 
 from __future__ import annotations

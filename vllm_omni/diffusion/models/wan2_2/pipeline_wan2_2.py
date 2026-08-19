@@ -208,10 +208,8 @@ def get_wan22_post_process_func(
             output_type = sampling_params.output_type
         if output_type == "latent":
             return video
-        # Fast path: when reduce_video_on_device is enabled the worker already
-        # reduced this to uint8 [F, H, W, C] frames on the GPU before D2H, so the
-        # float denormalize/scale below would corrupt already-[0,255] data. Emit
-        # the frames unchanged; the encoder consumes uint8 directly.
+        # Already uint8 [F, H, W, C] from the device-side reduction; skip the
+        # float denormalize/scale below and pass the frames through unchanged.
         if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
             return {"payload": {"video": video.cpu().numpy()}, "metadata": {}}
         video_metadata = {}
@@ -855,11 +853,9 @@ class Wan22Pipeline(
             latents = latents / latents_std + latents_mean
             output = self.vae.decode(latents, return_dict=False)[0]
 
-            # RFC #6212 workstream 1: reduce the decoded video to uint8 frames on
-            # the GPU here, before the D2H/SHM copy in the worker, so Hop 1 carries
-            # uint8 (~4x smaller) instead of float32. Only when the whole batch can
-            # use it -- requests wanting frame interpolation or a non-"np" output
-            # keep the float tensor so their engine-side postprocess still works.
+            # Reduce to uint8 on the GPU before the worker's D2H copy so Hop 1
+            # carries ~4x less. Only when every request in the batch can use it;
+            # frame interpolation or a non-"np" output keeps the float tensor.
             transport = getattr(self.od_config, "video_output_transport", None)
             reduce_on_device = (
                 output_type == "np"

@@ -297,8 +297,8 @@ def get_lingbot_video_post_process_func(od_config: OmniDiffusionConfig):
             and (output_type == "np" or output_key == "image")
         ):
             if frames.dtype == torch.uint8:
-                # RFC #6212: a device-reduced video is already uint8; keep it
-                # (widening to float would make the encoder read 0..255 as 0..1).
+                # Already uint8 from the device-side reduction; keep it (widening
+                # to float would make the encoder read 0..255 as 0..1).
                 frames = frames.cpu().numpy()
             else:
                 frames = frames.float().cpu().numpy()
@@ -558,9 +558,9 @@ class LingBotVideoPipeline(
             decoded = self.vae.decode(vae_latents)
         frames = decoded[0] if isinstance(decoded, tuple) else decoded.sample
         if reduce_to_uint8:
-            # RFC #6212: reduce [B,C,F,H,W] -> uint8 [B,F,H,W,C] on device before
-            # the D2H copy. LingBot denormalizes as clamp(-1,1) then (x+1)/2,
-            # which equals reduce_video_to_uint8_frames' (x*0.5+0.5).clamp(0,1).
+            # Reduce on the GPU before the D2H copy. LingBot denormalizes as
+            # clamp(-1,1) then (x+1)/2, matching reduce_video_to_uint8_frames'
+            # (x*0.5+0.5).clamp(0,1).
             frames = reduce_video_to_uint8_frames(frames)
             return frames[0].cpu()
         frames = frames.float().clamp_(-1, 1)

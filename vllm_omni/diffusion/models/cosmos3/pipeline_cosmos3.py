@@ -695,11 +695,9 @@ def get_cosmos3_post_process_func(od_config: OmniDiffusionConfig):
                 }
             return processed_image
         if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
-            # Device-reduced fast path (RFC #6212): the worker already produced
-            # uint8 [B, F, H, W, C] frames. The worker only reduces when
-            # guardrails are disabled (the safety check must inspect the float
-            # video), so it is safe to skip both check_video_safety and the
-            # denormalize here.
+            # Already uint8 [B, F, H, W, C] from the device-side reduction. The
+            # worker only reduces when guardrails are off (the safety check must
+            # see the float video), so skipping check_video_safety here is safe.
             processed_video = video.detach().cpu().numpy()
         else:
             guardrails_enabled = is_guardrails_enabled(od_config, sampling_params)
@@ -3708,10 +3706,9 @@ class Cosmos3OmniDiffusersPipeline(
                 and getattr(sp, "output_type", None) in (None, "np")
                 and not is_guardrails_enabled(self.od_config, sp)
             ):
-                # RFC #6212: reduce the decoded [B,C,F,H,W] video to uint8
-                # [B,F,H,W,C] on device before the D2H copy. Only when guardrails
-                # are disabled -- the safety check runs on the float video in
-                # post_process, so reducing early would bypass it. Image (t2i)
+                # Reduce to uint8 on the GPU before the D2H copy, but only when
+                # guardrails are off -- the safety check runs on the float video
+                # in post_process, so reducing early would bypass it. Image (t2i)
                 # and action outputs keep the float path.
                 video = reduce_video_to_uint8_frames(video)
         if _is_rank_zero():

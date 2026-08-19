@@ -203,9 +203,8 @@ def _minimax_h3_post_process(output, output_type: str = "np"):
         return output
     if output_type == "np":
         if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
-            # Device-reduced fast path (RFC #6212): the worker already produced
-            # uint8 [B, F, H, W, C] frames, so skip the permute/clamp/float that
-            # the raw [B, C, F, H, W] decode output needs.
+            # Already uint8 [B, F, H, W, C] from the device-side reduction; skip
+            # the permute/clamp/float the raw [B, C, F, H, W] decode output needs.
             video = list(video.detach().cpu().numpy())
         else:
             video = video.detach().float().cpu().permute(0, 2, 3, 4, 1).clamp(0, 1).numpy()
@@ -1876,10 +1875,8 @@ class MiniMaxH3Pipeline(
             and transport.reduce_video_on_device
             and getattr(sampling, "output_type", None) in (None, "np")
         ):
-            # RFC #6212: reduce the decoded [B,C,F,H,W] video to uint8
-            # [B,F,H,W,C] on device before the D2H copy. The decode output is
-            # already in [0, 1] (post_process clamps without denormalizing), so
-            # skip denormalization. Audio is untouched.
+            # MiniMax-H3's VAE already emits [0, 1] (post_process only clamps), so
+            # reduce without denormalizing. Audio is untouched.
             video = reduce_video_to_uint8_frames(video, do_denormalize=False)
         return DiffusionOutput(
             output=(video, audio),

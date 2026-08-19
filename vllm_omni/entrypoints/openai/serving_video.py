@@ -307,12 +307,11 @@ class OmniOpenAIServingVideo:
         )
 
     def _resolve_video_codec_options(self, request: VideoGenerationRequest) -> dict:
-        """Hop 2 MP4 encoder options (RFC #6212, WS2).
+        """Resolve MP4 encoder options for the engine->HTTP hop.
 
         Precedence: per-request ``extra_params["video_codec_options"]`` overrides
-        the deployment's ``video_output_transport.video_codec_options``, which in
-        turn defaults to the historical ``{"preset": "ultrafast", "threads": "0"}``.
-        This replaces the constant that was duplicated across the encode sites.
+        the deployment's ``video_output_transport.video_codec_options``, which
+        defaults to ``{"preset": "ultrafast", "threads": "0"}``.
         """
         get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
         od_config = get_od_config() if callable(get_od_config) else getattr(self._engine_client, "od_config", None)

@@ -559,11 +559,9 @@ class LTXRuntime(
         if video.numel() > 0:
             transport = getattr(self.od_config, "video_output_transport", None)
             if transport is not None and transport.reduce_video_on_device and output_type == "np":
-                # RFC #6212: reduce the decoded [B,C,F,H,W] video to uint8
-                # [B,F,H,W,C] on device before the D2H copy. The engine
-                # post_process packages the video tensor as-is, so the uint8
-                # frames flow straight through instead of the float postprocess
-                # output (encoder-identical after the /255 round-trip).
+                # Reduce to uint8 on the GPU before the D2H copy; the engine
+                # post_process packages the tensor as-is, so the uint8 frames
+                # flow straight through (encoder-identical after the /255 round).
                 video = reduce_video_to_uint8_frames(video)
             else:
                 video = self.video_processor.postprocess_video(video, output_type=output_type)

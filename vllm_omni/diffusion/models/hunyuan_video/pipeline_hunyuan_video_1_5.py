@@ -80,11 +80,9 @@ def get_hunyuan_video_15_post_process_func(od_config: OmniDiffusionConfig):
         if output_type == "latent":
             return video
         if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
-            # Device-reduced fast path (RFC #6212): the worker already produced
-            # uint8 [B, F, H, W, C] frames before the D2H copy. Skip the diffusers
-            # denormalize/scale (which assumes float [B, C, F, H, W] and would
-            # corrupt uint8 data) and materialize the same output the float path
-            # would -- Image.fromarray on uint8 matches numpy_to_pil.
+            # Already uint8 [B, F, H, W, C] from the device-side reduction; skip
+            # the diffusers denormalize/scale and build PIL the same way the float
+            # path would (Image.fromarray on uint8 matches numpy_to_pil).
             frames = video.cpu().numpy()
             if output_type == "np":
                 return frames
@@ -561,9 +559,9 @@ class HunyuanVideo15Pipeline(
             latents = latents.to(self.vae.dtype) / self.vae.config.scaling_factor
             output = self.vae.decode(latents, return_dict=False)[0]
             if self.od_config.video_output_transport.reduce_video_on_device:
-                # RFC #6212: shrink the Hop-1 D2H payload 4x by reducing to uint8
-                # [B, F, H, W, C] on device before the copy. post_process detects
-                # the uint8 tensor and passes it through.
+                # Reduce to uint8 on the GPU before the D2H copy so Hop 1 carries
+                # ~4x less; post_process detects the uint8 tensor and passes it
+                # through.
                 output = reduce_video_to_uint8_frames(output)
 
         return DiffusionOutput(output=output)

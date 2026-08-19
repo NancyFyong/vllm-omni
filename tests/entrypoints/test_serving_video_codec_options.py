@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Hop 2 (RFC #6212 WS2) MP4 codec-option resolution in serving_video.
+"""MP4 codec-option resolution for the engine->HTTP hop in serving_video.
 
-The MP4 encoder options used on the engine->HTTP hop were a constant duplicated
-across the two encode sites. They are now first-class config
-(``video_output_transport.video_codec_options``) resolved with a clear
-precedence: per-request override > deployment config > historical default.
+The MP4 encoder options were a constant duplicated across the two encode sites.
+They are now first-class config (``video_output_transport.video_codec_options``)
+resolved with a clear precedence: per-request override > deployment config >
+default.
 """
 
 from __future__ import annotations

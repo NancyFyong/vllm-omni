@@ -603,7 +603,7 @@ def resolve_model_class_name(
 
 @dataclass
 class VideoOutputTransportConfig:
-    """Transport strategy for large diffusion outputs (RFC #6212, workstream 4).
+    """Transport strategy for large diffusion outputs.
 
     Replaces the module-level ``ipc._SHM_TENSOR_THRESHOLD`` constant with
     explicit per-deployment configuration, and selects how the read side of a
@@ -611,35 +611,29 @@ class VideoOutputTransportConfig:
     """
 
     # How a consumer reads tensors that were moved through shared memory:
-    #   "copy"          - copy out of the segment and unlink it immediately.
-    #                     Historical behaviour and the default: ownership is
-    #                     trivially correct because the segment dies on read.
-    #   "shared_memory" - map the segment and wrap it without copying, for
-    #                     co-located consumers (e.g. verl-omni rollout workers
-    #                     on the same host). The reader then owns the segment
-    #                     and must release it; use
-    #                     ``ipc.borrowed_diffusion_output`` so a segment cannot
-    #                     outlive its consumer and leak /dev/shm.
+    #   "copy"          - copy out of the segment and unlink it immediately
+    #                     (the default; ownership is trivial since the segment
+    #                     dies on read).
+    #   "shared_memory" - map the segment without copying, for co-located
+    #                     consumers on the same host. The reader then owns the
+    #                     segment and must release it via
+    #                     ``ipc.borrowed_diffusion_output`` so it cannot outlive
+    #                     the consumer and leak /dev/shm.
     transport_mode: str = "copy"
 
     # Tensors whose view *or* backing storage exceeds this many bytes travel
     # through shared memory instead of being pickled through the MessageQueue.
     shm_threshold_bytes: int = 1_000_000
 
-    # When True, video pipelines that support it reduce the decoded tensor to
-    # uint8 RGB frames on the GPU *before* the device-to-host copy, so every
-    # downstream hop carries uint8 instead of float32 (RFC #6212, workstream 1).
-    # Opt-in and default off: only pipelines wired for it honour the flag, and
-    # requests needing the float tensor (latent output, frame interpolation)
-    # transparently fall back to the float path.
+    # When set, pipelines that support it reduce the decoded tensor to uint8 RGB
+    # frames on the GPU before the D2H copy, so every downstream hop carries
+    # uint8 instead of float32. Opt-in and off by default; requests needing the
+    # float tensor (latent output, frame interpolation) fall back to the float
+    # path.
     reduce_video_on_device: bool = False
 
-    # Hop 2 (engine -> HTTP client) MP4 encoder options (RFC #6212, workstream 2).
-    # Converges the default that was previously hardcoded and duplicated across
-    # the serving_video encode sites into first-class config, so a deployment can
-    # tune the encoder (a different preset, thread count, or a hardware encoder)
-    # without editing the API layer. A per-request
-    # ``extra_params["video_codec_options"]`` still overrides this.
+    # MP4 encoder options for the engine->HTTP hop, overridable per request via
+    # ``extra_params["video_codec_options"]``.
     video_codec_options: dict[str, str] = field(default_factory=lambda: {"preset": "ultrafast", "threads": "0"})
 
     VALID_TRANSPORT_MODES: ClassVar[frozenset[str]] = frozenset({"copy", "shared_memory"})

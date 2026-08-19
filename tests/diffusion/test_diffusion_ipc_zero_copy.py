@@ -1,11 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-"""Zero-copy (borrowed) shared-memory transport for diffusion outputs.
-
-Covers RFC #6212 workstreams 3 (zero-copy transport for co-located consumers)
-and 4 (explicit VideoOutputTransportConfig instead of a hardcoded threshold).
-"""
+"""Zero-copy (borrowed) shared-memory transport for diffusion outputs."""
 
 import contextlib
 from multiprocessing import shared_memory
@@ -44,7 +40,7 @@ def _large_tensor(numel: int = 4096) -> torch.Tensor:
 
 
 def test_borrowed_tensor_aliases_the_shared_segment_instead_of_copying() -> None:
-    """The whole point of workstream 3: no host copy on the read side.
+    """The borrowed tensor must alias the segment, not copy it.
 
     Writing through an independent handle to the same segment must be visible
     through the borrowed tensor. If a future change reintroduces a defensive
