@@ -695,9 +695,14 @@ def get_cosmos3_post_process_func(od_config: OmniDiffusionConfig):
                 }
             return processed_image
         if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
-            # Already uint8 [B, F, H, W, C] from the device-side reduction. The
-            # worker only reduces when guardrails are off (the safety check must
-            # see the float video), so skipping check_video_safety here is safe.
+            # Already uint8 [B, F, H, W, C] from the device-side reduction, which the
+            # worker only performs when guardrails are off. Fail closed instead of
+            # silently skipping the safety check if that ever stops holding.
+            if is_guardrails_enabled(od_config, sampling_params):
+                raise ValueError(
+                    "Cosmos3 received a device-reduced uint8 video while guardrails are enabled; "
+                    "check_video_safety requires the float [B, C, F, H, W] video."
+                )
             processed_video = video.detach().cpu().numpy()
         else:
             guardrails_enabled = is_guardrails_enabled(od_config, sampling_params)
