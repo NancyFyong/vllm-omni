@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import time
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
@@ -31,7 +33,6 @@ from vllm_omni.entrypoints.openai.stage_params import (
 from vllm_omni.entrypoints.openai.utils import get_stage_type, parse_lora_request
 from vllm_omni.entrypoints.openai.video_api_utils import (
     _encode_video_bytes,
-    encode_video_base64,
     resolve_video_encoder_settings,
 )
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniTextPrompt
@@ -320,6 +321,19 @@ class OmniOpenAIServingVideo:
         """
         return resolve_video_encoder_settings(self._engine_client, request.extra_params, low_latency=low_latency)
 
+    async def _store_video_artifact(self, video_bytes: bytes, output_format: str) -> str:
+        """Store one encoded video and return a URL the client can fetch.
+
+        Prefers a URL published by the storage backend (a static server or object
+        store in front of it); otherwise points at this server's artifact route,
+        so URL mode needs no extra infrastructure.
+        """
+        from vllm_omni.entrypoints.openai import storage
+
+        storage_key = f"{uuid.uuid4().hex}.{output_format}"
+        await storage.STORAGE_MANAGER.save(video_bytes, storage_key)
+        return storage.STORAGE_MANAGER.public_url(storage_key) or f"/v1/videos/artifacts/{storage_key}"
+
     async def generate_videos(
         self,
         request: VideoGenerationRequest,
@@ -337,34 +351,36 @@ class OmniOpenAIServingVideo:
             reference_audio=reference_audio,
         )
 
-        video_codec, video_codec_options = self._resolve_video_encoder(request)
+        settings = self._resolve_video_encoder(request)
 
         _t_encode_start = time.perf_counter()
-        video_data = [
-            VideoData(
-                b64_json=(
-                    encode_video_base64(
-                        video,
-                        fps=artifacts.output_fps,
-                        video_codec_options=video_codec_options,
-                        video_codec=video_codec,
-                    )
-                    if artifacts.audios[idx] is None
-                    else encode_video_base64(
-                        video,
-                        fps=artifacts.output_fps,
-                        audio=artifacts.audios[idx],
-                        audio_sample_rate=artifacts.audio_sample_rate,
-                        video_codec_options=video_codec_options,
-                        video_codec=video_codec,
-                    )
-                ),
-                action=artifacts.actions[idx],
+        encoded = [
+            _encode_video_bytes(
+                video,
+                fps=artifacts.output_fps,
+                audio=artifacts.audios[idx],
+                audio_sample_rate=artifacts.audio_sample_rate if artifacts.audios[idx] is not None else None,
+                video_codec_options=settings.codec_options,
+                video_codec=settings.codec,
+                output_format=settings.output_format,
             )
             for idx, video in enumerate(artifacts.videos)
         ]
+
+        if settings.transport_mode == "url":
+            # Hand back a URL instead of an inline payload: base64 would inflate
+            # the encoded video by ~33% and put all of it in the JSON body.
+            urls = [await self._store_video_artifact(data, settings.output_format) for data in encoded]
+            video_data = [VideoData(url=url, action=artifacts.actions[idx]) for idx, url in enumerate(urls)]
+        else:
+            video_data = [
+                VideoData(b64_json=base64.b64encode(data).decode("utf-8"), action=artifacts.actions[idx])
+                for idx, data in enumerate(encoded)
+            ]
         _t_encode_ms = (time.perf_counter() - _t_encode_start) * 1000
-        logger.info("Video response encoding (MP4+base64): %.2f ms", _t_encode_ms)
+        logger.info(
+            "Video response encoding (%s, %s): %.2f ms", settings.output_format, settings.transport_mode, _t_encode_ms
+        )
         return VideoGenerationResponse(
             created=int(time.time()),
             data=video_data,
@@ -397,7 +413,7 @@ class OmniOpenAIServingVideo:
             )
         audio = artifacts.audios[0]
 
-        video_codec, video_codec_options = self._resolve_video_encoder(request)
+        settings = self._resolve_video_encoder(request)
 
         action = artifacts.actions[0]
         if action is not None and isinstance(artifacts.videos[0], dict):
@@ -409,11 +425,12 @@ class OmniOpenAIServingVideo:
             artifacts.videos[0],
             fps=artifacts.output_fps,
             **({"audio": audio, "audio_sample_rate": artifacts.audio_sample_rate} if audio is not None else {}),
-            video_codec_options=video_codec_options,
-            video_codec=video_codec,
+            video_codec_options=settings.codec_options,
+            video_codec=settings.codec,
+            output_format=settings.output_format,
         )
         _t_encode_ms = (time.perf_counter() - _t_encode_start) * 1000
-        logger.info("Video response encoding (MP4 bytes): %.2f ms", _t_encode_ms)
+        logger.info("Video response encoding (%s bytes): %.2f ms", settings.output_format, _t_encode_ms)
         return video_bytes, artifacts.stage_durations, artifacts.peak_memory_mb, artifacts.actions[0]
 
     @staticmethod

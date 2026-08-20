@@ -119,7 +119,9 @@ async def test_decode_image_url_keeps_data_urls_local(monkeypatch):
 
 
 def _install_fake_video_mux(monkeypatch, mux_calls):
-    def _fake_mux_video_audio_bytes(frames, audio, fps, audio_sample_rate, video_codec_options=None, video_codec=None):
+    def _fake_mux_video_audio_bytes(
+        frames, audio, fps, audio_sample_rate, video_codec_options=None, video_codec=None, output_format=None
+    ):
         mux_calls.append(
             {
                 "frames": frames,

@@ -3,7 +3,7 @@
 """Equivalence of the LTX-2 device-reduction fast path.
 
 LTX-2 runs ``postprocess_video`` inside the worker runtime, so when
-``reduce_video_on_device`` is enabled the runtime instead reduces the decoded
+``enable_device_postprocess`` is enabled the runtime instead reduces the decoded
 video to uint8 on the GPU and the engine post-process packages it as-is. Two
 guards:
 

@@ -27,7 +27,7 @@ def _as_sampling_params_list(sampling_params: Any) -> list[Any]:
     return [sampling_params]
 
 
-def should_reduce_video_on_device(
+def should_enable_device_postprocess(
     od_config: Any,
     sampling_params: Any = None,
     *,
@@ -56,7 +56,7 @@ def should_reduce_video_on_device(
         return False
 
     transport = getattr(od_config, "video_output_transport", None)
-    if transport is None or not getattr(transport, "reduce_video_on_device", False):
+    if transport is None or not getattr(transport, "enable_device_postprocess", False):
         return False
 
     if output_type is not _UNSET and output_type != "np":

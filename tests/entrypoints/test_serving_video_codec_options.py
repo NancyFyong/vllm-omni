@@ -66,12 +66,12 @@ def test_http_default_matches_historical_constant(callable_api: bool) -> None:
 def test_streaming_default_matches_historical_constant() -> None:
     """The streaming site used a different constant; low_latency must reproduce it."""
     client = _client(VideoOutputTransportConfig())
-    assert resolve_video_encoder_settings(client, None, low_latency=True) == ("h264", _HISTORICAL_STREAM)
+    assert tuple(resolve_video_encoder_settings(client, None, low_latency=True)) == ("h264", _HISTORICAL_STREAM)
 
 
 def test_default_when_engine_exposes_no_config() -> None:
     serving = _serving()
-    assert serving._resolve_video_encoder(SimpleNamespace(extra_params=None)) == ("h264", _HISTORICAL_HTTP)
+    assert tuple(serving._resolve_video_encoder(SimpleNamespace(extra_params=None))) == ("h264", _HISTORICAL_HTTP)
 
 
 # --- precedence -------------------------------------------------------------
@@ -80,14 +80,14 @@ def test_default_when_engine_exposes_no_config() -> None:
 def test_options_come_from_deployment_config() -> None:
     transport = VideoOutputTransportConfig(video_codec_options={"crf": "30"})
     serving = _serving(transport)
-    assert serving._resolve_video_encoder(SimpleNamespace(extra_params=None)) == ("h264", {"crf": "30"})
+    assert tuple(serving._resolve_video_encoder(SimpleNamespace(extra_params=None))) == ("h264", {"crf": "30"})
 
 
 def test_per_request_options_override_config() -> None:
     transport = VideoOutputTransportConfig(video_codec_options={"crf": "30"})
     serving = _serving(transport)
     request = SimpleNamespace(extra_params={"video_codec_options": {"preset": "medium"}})
-    assert serving._resolve_video_encoder(request) == ("h264", {"preset": "medium"})
+    assert tuple(serving._resolve_video_encoder(request)) == ("h264", {"preset": "medium"})
 
 
 def test_per_request_codec_override_is_honoured() -> None:
@@ -104,7 +104,7 @@ def test_per_request_codec_override_is_honoured() -> None:
 def test_unavailable_hardware_codec_falls_back_to_software() -> None:
     transport = VideoOutputTransportConfig(video_codec=_UNAVAILABLE_HW_CODEC)
     serving = _serving(transport)
-    assert serving._resolve_video_encoder(SimpleNamespace(extra_params=None)) == ("h264", _HISTORICAL_HTTP)
+    assert tuple(serving._resolve_video_encoder(SimpleNamespace(extra_params=None))) == ("h264", _HISTORICAL_HTTP)
 
 
 def test_fallback_also_drops_the_requested_codecs_options() -> None:

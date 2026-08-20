@@ -25,7 +25,7 @@ import httpx
 import numpy as np
 import vllm.envs as envs
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, WebSocket
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel, Field
 from starlette.datastructures import State
@@ -144,7 +144,7 @@ from vllm_omni.entrypoints.openai.stage_params import (
     build_stage_sampling_params_list,
     get_default_sampling_params_list,
 )
-from vllm_omni.entrypoints.openai.storage import STORAGE_MANAGER, FileStorageHandle
+from vllm_omni.entrypoints.openai.storage import STORAGE_MANAGER, FileStorageHandle, UrlStorageHandle
 from vllm_omni.entrypoints.openai.stores import VIDEO_STORE, VIDEO_TASKS
 from vllm_omni.entrypoints.openai.utils import get_stage_type, parse_lora_request
 from vllm_omni.entrypoints.openai.video_api_utils import (
@@ -3729,12 +3729,42 @@ async def download_video(video_id: str) -> Response:
     file_name = job.file_name or f"{video_id}.{job.file_extension}"
     if isinstance(file_handle, FileStorageHandle):
         response = FileResponse(path=file_handle.path, media_type=job.media_type, filename=file_name)
+    elif isinstance(file_handle, UrlStorageHandle):
+        # The backend offloaded the artifact somewhere the client can reach, so
+        # send it there instead of proxying the bytes through this process.
+        response = RedirectResponse(url=file_handle.url, status_code=307)
     else:
         raise HTTPException(
             status_code=500, detail=f"Server generated an unsupported file storage handle for file id {video_id}"
         )
 
     return response
+
+
+@router.get("/v1/videos/artifacts/{storage_key}")
+async def download_video_artifact(storage_key: str) -> Response:
+    """Serve a stored video artifact by storage key.
+
+    Backs the URLs handed out when the video transport is configured to return a
+    URL instead of an inline base64 payload, so URL mode needs no static server
+    in front of the storage directory. Unlike ``/v1/videos/{id}/content`` this
+    does not require a job record, because artifacts from the synchronous
+    endpoint are not job-backed.
+    """
+    try:
+        handle = await STORAGE_MANAGER.open(storage_key)
+    except ValueError:
+        # Raised for keys that try to escape the storage directory.
+        raise HTTPException(status_code=400, detail="Invalid artifact key") from None
+
+    if handle is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    if isinstance(handle, FileStorageHandle):
+        return FileResponse(path=handle.path, media_type="video/mp4", filename=storage_key)
+    if isinstance(handle, UrlStorageHandle):
+        return RedirectResponse(url=handle.url, status_code=307)
+    raise HTTPException(status_code=500, detail="Server generated an unsupported storage handle")
 
 
 @profiler_router.post("/start_profile")

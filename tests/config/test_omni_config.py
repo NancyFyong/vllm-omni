@@ -976,12 +976,12 @@ def test_diffusion_config_normalizes_video_output_transport_from_mapping():
     from vllm_omni.diffusion.data import VideoOutputTransportConfig
 
     cfg = omni_config_module._DiffusionConfigProjection(
-        video_output_transport={"shm_threshold_bytes": 8192, "reduce_video_on_device": True},
+        video_output_transport={"shm_threshold_bytes": 8192, "enable_device_postprocess": True},
     )
 
     assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
     assert cfg.video_output_transport.shm_threshold_bytes == 8192
-    assert cfg.video_output_transport.reduce_video_on_device is True
+    assert cfg.video_output_transport.enable_device_postprocess is True
 
 
 def test_diffusion_config_defaults_video_output_transport():
@@ -990,7 +990,7 @@ def test_diffusion_config_defaults_video_output_transport():
     cfg = omni_config_module._DiffusionConfigProjection()
 
     assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
-    assert cfg.video_output_transport.reduce_video_on_device is False
+    assert cfg.video_output_transport.enable_device_postprocess is False
     assert cfg.video_output_transport.shm_threshold_bytes == 1_000_000
 
 
@@ -1026,10 +1026,10 @@ def test_video_output_transport_cli_json_string_is_wired():
 
     assert "video_output_transport" in {f.name for f in fields(OrchestratorArgs)}
 
-    parsed = json.loads('{"reduce_video_on_device": true, "shm_threshold_bytes": 4096}')
+    parsed = json.loads('{"enable_device_postprocess": true, "shm_threshold_bytes": 4096}')
     cfg = OmniDiffusionConfig(model="x", video_output_transport=parsed)
     assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
-    assert cfg.video_output_transport.reduce_video_on_device is True
+    assert cfg.video_output_transport.enable_device_postprocess is True
     assert cfg.video_output_transport.shm_threshold_bytes == 4096
 
 

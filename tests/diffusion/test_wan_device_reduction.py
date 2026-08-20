@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """End-to-end equivalence of the WAN device-reduction fast path.
 
-When ``reduce_video_on_device`` is enabled, WAN's ``forward`` reduces the
+When ``enable_device_postprocess`` is enabled, WAN's ``forward`` reduces the
 decoded video to uint8 frames on the GPU and its ``post_process_func`` passes
 those frames through unchanged. This must produce byte-identical encoder input
 to the historical float path (diffusers postprocess + the API server's ``*255``

@@ -24,7 +24,7 @@ from vllm_omni.diffusion.models.interface import SupportsComponentDiscovery
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.postprocess.device_reduction import (
     reduce_video_to_uint8_frames,
-    should_reduce_video_on_device,
+    should_enable_device_postprocess,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch, split_diffusion_output_by_request
@@ -560,7 +560,7 @@ class LTXRuntime(
             )
 
         if video.numel() > 0:
-            if should_reduce_video_on_device(self.od_config, output_type=output_type):
+            if should_enable_device_postprocess(self.od_config, output_type=output_type):
                 # Reduce to uint8 on the GPU before the D2H copy; the engine
                 # post_process packages the tensor as-is, so the uint8 frames
                 # flow straight through (encoder-identical after the /255 round).

@@ -16,6 +16,40 @@ from vllm.logger import init_logger
 logger = init_logger(__name__)
 
 DEFAULT_VIDEO_CODEC = "h264"
+DEFAULT_OUTPUT_FORMAT = "mp4"
+
+# A container only accepts codecs it can hold, so the format drives the defaults:
+# webm takes VP9/Opus, not H.264/AAC.
+_FORMAT_DEFAULTS: dict[str, dict[str, str]] = {
+    "mp4": {"video_codec": "h264", "audio_codec": "aac", "media_type": "video/mp4"},
+    "webm": {"video_codec": "libvpx-vp9", "audio_codec": "libopus", "media_type": "video/webm"},
+}
+
+
+def _format_defaults(output_format: str | None) -> dict[str, str]:
+    fmt = output_format or DEFAULT_OUTPUT_FORMAT
+    try:
+        return _FORMAT_DEFAULTS[fmt]
+    except KeyError:
+        raise ValueError(
+            f"Unsupported video output format {fmt!r}; expected one of {sorted(_FORMAT_DEFAULTS)}"
+        ) from None
+
+
+def default_video_codec_for_format(output_format: str | None) -> str:
+    """Video codec the given container expects."""
+    return _format_defaults(output_format)["video_codec"]
+
+
+def default_audio_codec_for_format(output_format: str | None) -> str:
+    """Audio codec the given container expects."""
+    return _format_defaults(output_format)["audio_codec"]
+
+
+def media_type_for_format(output_format: str | None) -> str:
+    """HTTP media type for the given container."""
+    return _format_defaults(output_format)["media_type"]
+
 
 # Fast-preset options per encoder. FFmpeg rejects options that belong to another
 # encoder family (passing NVENC's "preset=p1" to libx264 fails avcodec_open2),
@@ -70,7 +104,8 @@ def resolve_encoder_settings(
     codec_options: dict[str, str] | None = None,
     *,
     low_latency: bool = False,
-    fallback: str = DEFAULT_VIDEO_CODEC,
+    fallback: str | None = None,
+    output_format: str | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Pick an encoder that can run here plus the options that match it.
 
@@ -79,8 +114,12 @@ def resolve_encoder_settings(
     dropped in favour of the fallback's own defaults, because FFmpeg refuses
     options from a different encoder family and would fail the whole encode.
 
-    Empty ``codec_options`` means "use the fast defaults for this codec".
+    Empty ``codec_options`` means "use the fast defaults for this codec". The
+    fallback follows ``output_format`` so we never hand a container a codec it
+    cannot hold.
     """
+    if fallback is None:
+        fallback = default_video_codec_for_format(output_format)
     requested = codec or fallback
     if requested != fallback and not _encoder_is_usable(requested):
         logger.warning(
@@ -213,9 +252,10 @@ def mux_video_audio_bytes(
     fps: float = 25.0,
     audio_sample_rate: int = 44100,
     video_codec: str = "h264",
-    audio_codec: str = "aac",
+    audio_codec: str | None = None,
     crf: str = "18",
     video_codec_options: dict[str, str] | None = None,
+    output_format: str | None = None,
 ) -> bytes:
     """Mux video frames and optional audio waveform into MP4 bytes.
 
@@ -232,7 +272,7 @@ def mux_video_audio_bytes(
         Raw MP4 bytes ready to be written to disk or streamed.
     """
     buf = io.BytesIO()
-    container = av.open(buf, mode="w", format="mp4")
+    container = av.open(buf, mode="w", format=output_format or DEFAULT_OUTPUT_FORMAT)
 
     v_stream = cast(av.VideoStream, container.add_stream(video_codec, rate=Fraction(fps).limit_denominator(10000)))
     v_stream.width = video_frames.shape[2]
@@ -255,7 +295,10 @@ def mux_video_audio_bytes(
             samples = np.ascontiguousarray(samples.T)
         num_channels = samples.shape[0]
         layout = "stereo" if num_channels >= 2 else "mono"
-        a_stream = cast(av.AudioStream, container.add_stream(audio_codec, rate=audio_sample_rate))
+        a_stream = cast(
+            av.AudioStream,
+            container.add_stream(audio_codec or default_audio_codec_for_format(output_format), rate=audio_sample_rate),
+        )
         a_stream.layout = layout
 
     for frame_data in video_frames:

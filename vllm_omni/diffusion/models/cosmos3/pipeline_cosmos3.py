@@ -71,7 +71,7 @@ from vllm_omni.diffusion.models.schedulers.scheduling_flow_unipc_multistep impor
 from vllm_omni.diffusion.postprocess.device_reduction import (
     is_device_reduced,
     reduce_video_to_uint8_frames,
-    should_reduce_video_on_device,
+    should_enable_device_postprocess,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
@@ -3711,7 +3711,7 @@ class Cosmos3OmniDiffusersPipeline(
             # Guardrails block the reduction: the safety check runs on the float
             # video in post_process, so reducing early would bypass it. Image
             # (t2i) and action outputs keep the float path via the branch above.
-            if should_reduce_video_on_device(self.od_config, sp, blocked=is_guardrails_enabled(self.od_config, sp)):
+            if should_enable_device_postprocess(self.od_config, sp, blocked=is_guardrails_enabled(self.od_config, sp)):
                 video = reduce_video_to_uint8_frames(video)
         if _is_rank_zero():
             logger.info("Video decoded in %.2fs", time.time() - decode_start)

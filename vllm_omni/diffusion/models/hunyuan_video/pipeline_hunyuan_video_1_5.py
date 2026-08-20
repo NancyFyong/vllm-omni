@@ -34,7 +34,7 @@ from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
 from vllm_omni.diffusion.postprocess.device_reduction import (
     is_device_reduced,
     reduce_video_to_uint8_frames,
-    should_reduce_video_on_device,
+    should_enable_device_postprocess,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
@@ -564,7 +564,7 @@ class HunyuanVideo15Pipeline(
             output = self.vae.decode(latents, return_dict=False)[0]
             # No output_type gate: post_process always runs at its default and
             # converts the uint8 frames to PIL.
-            if should_reduce_video_on_device(self.od_config):
+            if should_enable_device_postprocess(self.od_config):
                 output = reduce_video_to_uint8_frames(output)
 
         return DiffusionOutput(output=output)

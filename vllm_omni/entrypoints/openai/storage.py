@@ -4,9 +4,10 @@ import os
 import stat
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from tempfile import NamedTemporaryFile
-from typing import Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from vllm.logger import init_logger
 
@@ -33,6 +34,18 @@ class FileStorageHandle(BaseStorageHandle):
     kind: Literal["path"] = field(default="path", init=False)
 
 
+@dataclass(frozen=True)
+class UrlStorageHandle(BaseStorageHandle):
+    """An artifact the client should fetch itself instead of being served inline.
+
+    Returned by backends that offload artifacts somewhere already reachable by
+    the client (a shared filesystem behind a static server, or an object store).
+    """
+
+    url: str
+    kind: Literal["url"] = field(default="url", init=False)
+
+
 K = TypeVar("K", bound=BaseStorageHandle, covariant=True)
 
 
@@ -55,18 +68,41 @@ class StorageBaseManager(Generic[K], ABC):
     async def open(self, storage_key: str) -> K | None:
         pass
 
+    def public_url(self, storage_key: str) -> str | None:
+        """A client-reachable URL for the artifact, when the backend has one.
 
-class LocalStorageManager(StorageBaseManager[FileStorageHandle]):
-    def __init__(self, storage_path: str, max_concurrency: int = 4):
+        ``None`` means the artifact is only reachable through this server, so
+        callers should fall back to serving it themselves.
+        """
+        return None
+
+
+class LocalStorageManager(StorageBaseManager[FileStorageHandle | UrlStorageHandle]):
+    def __init__(self, storage_path: str, max_concurrency: int = 4, public_base_url: str | None = None):
         self.storage_path = os.path.realpath(storage_path)
         os.makedirs(self.storage_path, exist_ok=True)
 
+        # Set when the storage directory is already published by something else
+        # (a static server or CDN in front of a shared filesystem), which lets us
+        # hand clients a URL instead of streaming bytes through this process.
+        self.public_base_url = public_base_url.rstrip("/") if public_base_url else None
+
         self._io_semaphore = asyncio.Semaphore(max(1, max_concurrency))
 
-    async def open(self, storage_key: str) -> FileStorageHandle | None:
+    def public_url(self, storage_key: str) -> str | None:
+        if self.public_base_url is None:
+            return None
+        # Validates the key before it is handed out as a URL.
+        self.get_full_file_path(storage_key)
+        return f"{self.public_base_url}/{storage_key}"
+
+    async def open(self, storage_key: str) -> FileStorageHandle | UrlStorageHandle | None:
         local_file = self.get_full_file_path(storage_key)
         if not os.path.exists(local_file):
             return None
+        public_url = self.public_url(storage_key)
+        if public_url is not None:
+            return UrlStorageHandle(url=public_url)
         return FileStorageHandle(path=local_file)
 
     def _save_sync(self, data: bytes, file_name: str) -> SaveContext:
@@ -188,7 +224,47 @@ class LocalStorageTTLManager(LocalStorageManager):
         self._sweeper_task = None
 
 
-def get_storage_manager(storage_config: FileBackend) -> StorageBaseManager[FileStorageHandle]:
+StorageBackendFactory = Callable[[Any], StorageBaseManager]
+
+_STORAGE_BACKENDS: dict[str, StorageBackendFactory] = {}
+
+
+def register_storage_backend(backend_type: str, factory: StorageBackendFactory) -> None:
+    """Register a storage backend under the ``type`` used by the storage config.
+
+    The extension point for artifact offloading: an out-of-tree object-store
+    backend (S3, OSS, ...) registers a factory here and returns
+    ``UrlStorageHandle`` from ``open``, which the video routes redirect to. No
+    object-store client ships in-tree, so nothing here assumes one.
+    """
+    _STORAGE_BACKENDS[backend_type] = factory
+
+
+def _build_file_backend(storage_config: FileBackend) -> StorageBaseManager:
+    if storage_config.file_ttl is not None and storage_config.ttl_sweep_interval is not None:
+        return LocalStorageTTLManager(
+            storage_path=storage_config.path,
+            max_concurrency=storage_config.file_concurrency,
+            ttl_seconds=storage_config.file_ttl,
+            sweep_interval_seconds=storage_config.ttl_sweep_interval,
+            public_base_url=storage_config.public_base_url,
+        )
+    return LocalStorageManager(
+        storage_path=storage_config.path,
+        max_concurrency=storage_config.file_concurrency,
+        public_base_url=storage_config.public_base_url,
+    )
+
+
+register_storage_backend("file", _build_file_backend)
+
+
+def get_storage_manager(storage_config: Any) -> StorageBaseManager:
+    backend_type = getattr(storage_config, "type", None)
+    factory = _STORAGE_BACKENDS.get(backend_type) if backend_type is not None else None
+    if factory is not None:
+        return factory(storage_config)
+
     if isinstance(storage_config, FileBackend):
         if storage_config.file_ttl is not None and storage_config.ttl_sweep_interval is not None:
             manager = LocalStorageTTLManager(

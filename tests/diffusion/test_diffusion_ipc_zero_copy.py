@@ -241,4 +241,4 @@ def test_invalid_transport_config_is_rejected(kwargs: dict) -> None:
 def test_transport_config_defaults_preserve_current_behaviour() -> None:
     config = VideoOutputTransportConfig()
     assert config.shm_threshold_bytes == _SHM_TENSOR_THRESHOLD
-    assert config.reduce_video_on_device is False
+    assert config.enable_device_postprocess is False

@@ -38,7 +38,7 @@ from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.schedulers import FlowUniPCMultistepScheduler
 from vllm_omni.diffusion.postprocess.device_reduction import (
     reduce_video_to_uint8_frames,
-    should_reduce_video_on_device,
+    should_enable_device_postprocess,
 )
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
@@ -808,7 +808,7 @@ class LingBotVideoPipeline(
             if vae_offloaded and vae_restore_device is not None:
                 self.vae.to(device=vae_restore_device)
                 torch.accelerator.empty_cache()
-            reduce_now = should_reduce_video_on_device(
+            reduce_now = should_enable_device_postprocess(
                 self.od_config,
                 output_type=output_type,
                 blocked=mode is LingBotGenerationMode.T2I,

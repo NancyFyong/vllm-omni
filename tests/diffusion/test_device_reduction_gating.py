@@ -23,14 +23,14 @@ from vllm_omni.diffusion.postprocess.device_reduction import (
     is_device_reduced,
 )
 from vllm_omni.diffusion.postprocess.device_reduction import (
-    should_reduce_video_on_device as _should_reduce_video_on_device,
+    should_enable_device_postprocess as _should_enable_device_postprocess,
 )
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
 
 def _od_config(*, reduce: bool) -> SimpleNamespace:
-    return SimpleNamespace(video_output_transport=VideoOutputTransportConfig(reduce_video_on_device=reduce))
+    return SimpleNamespace(video_output_transport=VideoOutputTransportConfig(enable_device_postprocess=reduce))
 
 
 def _sp(output_type: str | None = None, *, interpolate: bool = False) -> SimpleNamespace:
@@ -42,22 +42,24 @@ def _sp(output_type: str | None = None, *, interpolate: bool = False) -> SimpleN
 
 def test_gate_closed_when_a_model_specific_veto_blocks_it() -> None:
     """Cosmos3 passes guardrails and LingBot passes text-to-image as ``blocked``."""
-    assert _should_reduce_video_on_device(_od_config(reduce=True), [_sp("np")], output_type="np", blocked=True) is False
+    assert (
+        _should_enable_device_postprocess(_od_config(reduce=True), [_sp("np")], output_type="np", blocked=True) is False
+    )
 
 
 def test_gate_open_without_sampling_params_or_output_type() -> None:
     """HunyuanVideo's shape: no per-request output type, post_process fixes the format."""
-    assert _should_reduce_video_on_device(_od_config(reduce=True)) is True
+    assert _should_enable_device_postprocess(_od_config(reduce=True)) is True
 
 
 def test_gate_reads_a_single_sampling_params_object() -> None:
     """MiniMax-H3 and Cosmos3 pass one request, not a batch."""
-    assert _should_reduce_video_on_device(_od_config(reduce=True), _sp("np")) is True
-    assert _should_reduce_video_on_device(_od_config(reduce=True), _sp("latent")) is False
+    assert _should_enable_device_postprocess(_od_config(reduce=True), _sp("np")) is True
+    assert _should_enable_device_postprocess(_od_config(reduce=True), _sp("latent")) is False
 
 
 def test_gate_treats_unset_request_output_type_as_np() -> None:
-    assert _should_reduce_video_on_device(_od_config(reduce=True), _sp(None)) is True
+    assert _should_enable_device_postprocess(_od_config(reduce=True), _sp(None)) is True
 
 
 def test_omitting_output_type_differs_from_passing_none() -> None:
@@ -67,8 +69,8 @@ def test_omitting_output_type_differs_from_passing_none() -> None:
     at runtime, which previously kept the float path.
     """
     config = _od_config(reduce=True)
-    assert _should_reduce_video_on_device(config) is True
-    assert _should_reduce_video_on_device(config, output_type=None) is False
+    assert _should_enable_device_postprocess(config) is True
+    assert _should_enable_device_postprocess(config, output_type=None) is False
 
 
 def test_interpolation_closes_the_gate_for_every_model() -> None:
@@ -80,7 +82,7 @@ def test_interpolation_closes_the_gate_for_every_model() -> None:
     optimization for a request that asks a model for interpolation it lacks.
     """
     config = _od_config(reduce=True)
-    assert _should_reduce_video_on_device(config, _sp("np", interpolate=True)) is False
+    assert _should_enable_device_postprocess(config, _sp("np", interpolate=True)) is False
 
 
 def test_is_device_reduced_only_matches_uint8_tensors() -> None:
@@ -99,33 +101,33 @@ def np_zeros():
 
 
 def test_gate_open_when_flag_on_and_whole_batch_wants_np() -> None:
-    assert _should_reduce_video_on_device(_od_config(reduce=True), [_sp("np"), _sp(None)], output_type="np") is True
+    assert _should_enable_device_postprocess(_od_config(reduce=True), [_sp("np"), _sp(None)], output_type="np") is True
 
 
 def test_gate_closed_when_flag_off() -> None:
     """Default off must mean no behaviour change at all."""
-    assert _should_reduce_video_on_device(_od_config(reduce=False), [_sp("np")], output_type="np") is False
+    assert _should_enable_device_postprocess(_od_config(reduce=False), [_sp("np")], output_type="np") is False
 
 
 def test_gate_closed_when_config_has_no_transport_section() -> None:
     """A stub/legacy config without the field must not crash or reduce."""
-    assert _should_reduce_video_on_device(SimpleNamespace(), [_sp("np")], output_type="np") is False
+    assert _should_enable_device_postprocess(SimpleNamespace(), [_sp("np")], output_type="np") is False
 
 
 def test_gate_closed_when_pipeline_output_type_is_not_np() -> None:
-    assert _should_reduce_video_on_device(_od_config(reduce=True), [_sp("np")], output_type="pil") is False
+    assert _should_enable_device_postprocess(_od_config(reduce=True), [_sp("np")], output_type="pil") is False
 
 
 def test_gate_closed_when_any_request_wants_a_non_np_output() -> None:
     """One 'latent' request keeps the whole batch on the float path."""
     batch = [_sp("np"), _sp("latent")]
-    assert _should_reduce_video_on_device(_od_config(reduce=True), batch, output_type="np") is False
+    assert _should_enable_device_postprocess(_od_config(reduce=True), batch, output_type="np") is False
 
 
 def test_gate_closed_when_any_request_wants_frame_interpolation() -> None:
     """RIFE interpolation needs float [B, C, F, H, W]; one such request closes the gate."""
     batch = [_sp("np"), _sp("np", interpolate=True)]
-    assert _should_reduce_video_on_device(_od_config(reduce=True), batch, output_type="np") is False
+    assert _should_enable_device_postprocess(_od_config(reduce=True), batch, output_type="np") is False
 
 
 # --- Fail-closed checks in the uint8 fast paths ----------------------------

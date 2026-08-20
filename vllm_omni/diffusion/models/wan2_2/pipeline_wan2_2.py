@@ -38,7 +38,7 @@ from vllm_omni.diffusion.postprocess import interpolate_video_tensor
 from vllm_omni.diffusion.postprocess.device_reduction import (
     is_device_reduced,
     reduce_video_to_uint8_frames,
-    should_reduce_video_on_device,
+    should_enable_device_postprocess,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
@@ -867,7 +867,7 @@ class Wan22Pipeline(
 
             # Reduce to uint8 on the GPU before the worker's D2H copy so Hop 1
             # carries ~4x less.
-            if should_reduce_video_on_device(self.od_config, sampling_params_list, output_type=output_type):
+            if should_enable_device_postprocess(self.od_config, sampling_params_list, output_type=output_type):
                 output = reduce_video_to_uint8_frames(output)
 
         if DEBUG_PERF:

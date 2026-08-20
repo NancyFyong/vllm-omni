@@ -30,6 +30,14 @@ class FileBackend(BaseModel):
     ttl_sweep_interval: int | None = Field(
         default=None, description="Optional frequency (in seconds) to enforce file TTLs."
     )
+    public_base_url: str | None = Field(
+        default=None,
+        description=(
+            "Base URL under which `path` is already published (static server or CDN in front of a shared "
+            "filesystem). When set, artifact handles become URLs the client fetches directly instead of "
+            "being streamed through this server."
+        ),
+    )
 
     @field_validator("path", mode="before")
     @classmethod

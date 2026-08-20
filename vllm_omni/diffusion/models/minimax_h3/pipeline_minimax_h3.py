@@ -48,7 +48,7 @@ from vllm_omni.diffusion.offloader import OffloadPlan
 from vllm_omni.diffusion.postprocess.device_reduction import (
     is_device_reduced,
     reduce_video_to_uint8_frames,
-    should_reduce_video_on_device,
+    should_enable_device_postprocess,
 )
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import (
     DiffusionPipelineProfilerMixin,
@@ -1873,7 +1873,7 @@ class MiniMaxH3Pipeline(
             audios.append(audio)
         video = torch.cat(videos, dim=0)
         audio = torch.cat(audios, dim=0)
-        if should_reduce_video_on_device(self.od_config, sampling):
+        if should_enable_device_postprocess(self.od_config, sampling):
             # MiniMax-H3's VAE already emits [0, 1] (post_process only clamps), so
             # reduce without denormalizing. Audio is untouched.
             video = reduce_video_to_uint8_frames(video, do_denormalize=False)

@@ -10,6 +10,7 @@ import base64
 import binascii
 import os
 import tempfile
+from dataclasses import dataclass
 from io import BytesIO
 from typing import Any, Literal
 
@@ -523,21 +524,42 @@ def _coerce_video_to_uint8_frames(video: Any) -> np.ndarray:
     return frames_u8
 
 
+@dataclass(frozen=True)
+class VideoEncoderSettings:
+    """Resolved encoder policy for one request."""
+
+    codec: str
+    codec_options: dict[str, str]
+    output_format: str
+    media_type: str
+    transport_mode: str
+
+    def __iter__(self):
+        """Kept unpackable as ``codec, options`` for the encode call sites."""
+        return iter((self.codec, self.codec_options))
+
+
 def resolve_video_encoder_settings(
     engine_client: Any,
     extra_params: Any = None,
     *,
     low_latency: bool = False,
-) -> tuple[str, dict[str, str]]:
-    """Resolve the video encoder for one request: deployment config + overrides.
+    force_output_format: str | None = None,
+) -> VideoEncoderSettings:
+    """Resolve the video output policy for one request: deployment config + overrides.
 
     Shared by the HTTP and WebSocket video endpoints so the encoder policy lives
     in one place instead of being duplicated per encode site. Per-request
-    ``extra_params["video_codec"]``/``["video_codec_options"]`` win over the
-    deployment's ``video_output_transport``; an unavailable hardware encoder
-    falls back to software, and empty options mean the codec's fast presets.
+    ``extra_params["video_codec"]``/``["video_codec_options"]``/
+    ``["output_format"]`` win over the deployment's ``video_output_transport``; an
+    unavailable hardware encoder falls back to software, and empty options mean
+    the codec's fast presets.
     """
-    from vllm_omni.diffusion.utils.media_utils import resolve_encoder_settings
+    from vllm_omni.diffusion.utils.media_utils import (
+        DEFAULT_OUTPUT_FORMAT,
+        media_type_for_format,
+        resolve_encoder_settings,
+    )
     from vllm_omni.entrypoints.openai.utils import resolve_diffusion_od_config
 
     try:
@@ -554,13 +576,31 @@ def resolve_video_encoder_settings(
     configured = getattr(transport, "video_codec_options", None)
     codec_options = dict(configured) if isinstance(configured, dict) else None
 
+    output_format = getattr(transport, "output_format", None) or DEFAULT_OUTPUT_FORMAT
+    transport_mode = getattr(transport, "transport_mode", None) or "base64"
+
     overrides = extra_params if isinstance(extra_params, dict) else {}
     if "video_codec" in overrides:
         codec = overrides["video_codec"]
     if "video_codec_options" in overrides:
         codec_options = overrides["video_codec_options"]
+    if overrides.get("output_format"):
+        output_format = overrides["output_format"]
+    if force_output_format is not None:
+        # The fragmented-MP4 streaming path carries its own container, so the
+        # deployment's artifact format must not pick a codec that cannot go in it.
+        output_format = force_output_format
 
-    return resolve_encoder_settings(codec, codec_options, low_latency=low_latency)
+    resolved_codec, resolved_options = resolve_encoder_settings(
+        codec, codec_options, low_latency=low_latency, output_format=output_format
+    )
+    return VideoEncoderSettings(
+        codec=resolved_codec,
+        codec_options=resolved_options,
+        output_format=output_format,
+        media_type=media_type_for_format(output_format),
+        transport_mode=transport_mode,
+    )
 
 
 def _encode_video_bytes(
@@ -570,9 +610,10 @@ def _encode_video_bytes(
     audio_sample_rate: int | None = None,
     video_codec_options: dict[str, str] | None = None,
     video_codec: str | None = None,
+    output_format: str | None = None,
 ) -> bytes:
     """Encode a video payload into MP4 bytes, optionally muxing audio."""
-    from vllm_omni.diffusion.utils.media_utils import DEFAULT_VIDEO_CODEC, mux_video_audio_bytes
+    from vllm_omni.diffusion.utils.media_utils import default_video_codec_for_format, mux_video_audio_bytes
 
     audio_np = _coerce_audio_to_numpy(audio) if audio is not None else None
 
@@ -581,8 +622,9 @@ def _encode_video_bytes(
         audio_np,
         fps=float(fps),
         audio_sample_rate=audio_sample_rate or 24000,
-        video_codec=video_codec or DEFAULT_VIDEO_CODEC,
+        video_codec=video_codec or default_video_codec_for_format(output_format),
         video_codec_options=video_codec_options,
+        output_format=output_format,
     )
 
 
@@ -646,6 +688,7 @@ def encode_video_base64(
     audio_sample_rate: int | None = None,
     video_codec_options: dict[str, str] | None = None,
     video_codec: str | None = None,
+    output_format: str | None = None,
 ) -> str:
     """Encode a video (frames/array/tensor) to base64 MP4."""
     video_bytes = _encode_video_bytes(
@@ -655,5 +698,6 @@ def encode_video_base64(
         audio_sample_rate=audio_sample_rate,
         video_codec_options=video_codec_options,
         video_codec=video_codec,
+        output_format=output_format,
     )
     return base64.b64encode(video_bytes).decode("utf-8")

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """End-to-end equivalence of the HunyuanVideo-1.5 device-reduction fast path.
 
-When ``reduce_video_on_device`` is enabled, HunyuanVideo-1.5's ``forward``
+When ``enable_device_postprocess`` is enabled, HunyuanVideo-1.5's ``forward``
 reduces the decoded video to uint8 frames on the GPU and its
 ``post_process_func`` passes those frames through. The engine calls the
 post-process without an ``output_type`` (so it defaults to ``"pil"``), hence the

@@ -464,7 +464,7 @@ class OmniStreamingVideoOutputHandler:
         prompt, gen_params, vp = await self._build_prompt_and_sampling_params(request)
         # Streaming is latency-sensitive, so the resolved options add zerolatency.
         video_codec, video_codec_options = resolve_video_encoder_settings(
-            self._engine_client, request.extra_params, low_latency=True
+            self._engine_client, request.extra_params, low_latency=True, force_output_format="mp4"
         )
 
         output_fps = vp.fps or gen_params.resolved_frame_rate or 16

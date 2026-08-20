@@ -8,7 +8,7 @@ import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import diffusers
 import huggingface_hub
@@ -613,17 +613,26 @@ class VideoOutputTransportConfig:
     # through shared memory instead of being pickled through the MessageQueue.
     shm_threshold_bytes: int = 1_000_000
 
-    # When set, pipelines that support it reduce the decoded tensor to uint8 RGB
-    # frames on the GPU before the D2H copy, so every downstream hop carries
-    # uint8 instead of float32. Opt-in and off by default; requests needing the
-    # float tensor (latent output, frame interpolation) fall back to the float
-    # path.
-    reduce_video_on_device: bool = False
+    # When set, pipelines that support it run denormalize/clamp/layout/uint8 on
+    # the device before the D2H copy, so Hop 1 carries uint8 instead of float32.
+    # Opt-in and off by default; requests needing the float tensor (latent
+    # output, frame interpolation, guardrails) fall back to the float path.
+    enable_device_postprocess: bool = False
 
-    # Video encoder for the engine->HTTP hop. A hardware encoder (e.g.
+    # How a finished video reaches the client on the HTTP hop.
+    #   "base64": inline b64_json, the OpenAI-compatible default.
+    #   "url":    store the artifact and return a URL, avoiding the ~33% base64
+    #             inflation and keeping the encoded video out of the JSON body.
+    transport_mode: str = "base64"
+
+    # Container format for encoded video artifacts.
+    output_format: str = "mp4"
+
+    # Video encoder for the engine->HTTP hop. None means "whatever the output
+    # format expects" (h264 for mp4, VP9 for webm). A hardware encoder (e.g.
     # "h264_nvenc") that the host cannot open falls back to the software default,
     # so this is safe to set across mixed hardware.
-    video_codec: str = "h264"
+    video_codec: str | None = None
 
     # MP4 encoder options for the engine->HTTP hop, overridable per request via
     # ``extra_params["video_codec_options"]``. Empty means "use the fast presets
@@ -631,11 +640,22 @@ class VideoOutputTransportConfig:
     # come from; encoder families do not accept each other's options.
     video_codec_options: dict[str, str] = field(default_factory=dict)
 
+    VALID_TRANSPORT_MODES: ClassVar[frozenset[str]] = frozenset({"base64", "url"})
+    VALID_OUTPUT_FORMATS: ClassVar[frozenset[str]] = frozenset({"mp4", "webm"})
+
     def __post_init__(self):
         if self.shm_threshold_bytes <= 0:
             raise ValueError(f"shm_threshold_bytes must be positive, got {self.shm_threshold_bytes}")
         if not isinstance(self.video_codec_options, dict):
             raise ValueError(f"video_codec_options must be a dict, got {type(self.video_codec_options).__name__}")
+        if self.transport_mode not in self.VALID_TRANSPORT_MODES:
+            raise ValueError(
+                f"transport_mode must be one of {sorted(self.VALID_TRANSPORT_MODES)}, got {self.transport_mode!r}"
+            )
+        if self.output_format not in self.VALID_OUTPUT_FORMATS:
+            raise ValueError(
+                f"output_format must be one of {sorted(self.VALID_OUTPUT_FORMATS)}, got {self.output_format!r}"
+            )
 
 
 @dataclass

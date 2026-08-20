@@ -575,16 +575,16 @@ class TestRequestBatchAdmission:
         # become a real config so pipeline.forward can read attributes off it.
         from vllm_omni.diffusion.data import VideoOutputTransportConfig
 
-        config = OmniDiffusionConfig(model="test", video_output_transport={"reduce_video_on_device": True})
+        config = OmniDiffusionConfig(model="test", video_output_transport={"enable_device_postprocess": True})
         assert isinstance(config.video_output_transport, VideoOutputTransportConfig)
-        assert config.video_output_transport.reduce_video_on_device is True
+        assert config.video_output_transport.enable_device_postprocess is True
 
     def test_config_defaults_video_output_transport(self) -> None:
         from vllm_omni.diffusion.data import VideoOutputTransportConfig
 
         config = OmniDiffusionConfig(model="test")
         assert isinstance(config.video_output_transport, VideoOutputTransportConfig)
-        assert config.video_output_transport.reduce_video_on_device is False
+        assert config.video_output_transport.enable_device_postprocess is False
 
     def test_config_rejects_invalid_video_output_transport_mapping(self) -> None:
         with pytest.raises(ValueError, match="shm_threshold_bytes"):
