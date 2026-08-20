@@ -31,7 +31,11 @@ from vllm_omni.diffusion.models.hunyuan_video.hunyuan_video_15_transformer impor
 from vllm_omni.diffusion.models.interface import SupportsComponentDiscovery
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.t5_encoder import T5EncoderModel
-from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
+from vllm_omni.diffusion.postprocess.device_reduction import (
+    is_device_reduced,
+    reduce_video_to_uint8_frames,
+    should_reduce_video_on_device,
+)
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
@@ -79,7 +83,7 @@ def get_hunyuan_video_15_post_process_func(od_config: OmniDiffusionConfig):
     def post_process_func(video: torch.Tensor, output_type: str = "pil"):
         if output_type == "latent":
             return video
-        if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
+        if is_device_reduced(video):
             # Already uint8 [B, F, H, W, C] from the device-side reduction; skip
             # the diffusers denormalize/scale and build PIL the same way the float
             # path would (Image.fromarray on uint8 matches numpy_to_pil).
@@ -558,10 +562,9 @@ class HunyuanVideo15Pipeline(
         else:
             latents = latents.to(self.vae.dtype) / self.vae.config.scaling_factor
             output = self.vae.decode(latents, return_dict=False)[0]
-            if self.od_config.video_output_transport.reduce_video_on_device:
-                # Reduce to uint8 on the GPU before the D2H copy so Hop 1 carries
-                # ~4x less; post_process detects the uint8 tensor and passes it
-                # through.
+            # No output_type gate: post_process always runs at its default and
+            # converts the uint8 frames to PIL.
+            if should_reduce_video_on_device(self.od_config):
                 output = reduce_video_to_uint8_frames(output)
 
         return DiffusionOutput(output=output)

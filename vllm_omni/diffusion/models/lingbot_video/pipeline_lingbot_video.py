@@ -36,7 +36,10 @@ from vllm_omni.diffusion.models.lingbot_video.request_utils import (
 )
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.schedulers import FlowUniPCMultistepScheduler
-from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
+from vllm_omni.diffusion.postprocess.device_reduction import (
+    reduce_video_to_uint8_frames,
+    should_reduce_video_on_device,
+)
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
 from vllm_omni.errors import OmniClientError
@@ -805,12 +808,10 @@ class LingBotVideoPipeline(
             if vae_offloaded and vae_restore_device is not None:
                 self.vae.to(device=vae_restore_device)
                 torch.accelerator.empty_cache()
-            transport = getattr(self.od_config, "video_output_transport", None)
-            reduce_now = (
-                output_type == "np"
-                and mode is not LingBotGenerationMode.T2I
-                and transport is not None
-                and transport.reduce_video_on_device
+            reduce_now = should_reduce_video_on_device(
+                self.od_config,
+                output_type=output_type,
+                blocked=mode is LingBotGenerationMode.T2I,
             )
             decoded = self._decode_latents(latents, reduce_to_uint8=reduce_now)
             if mode is LingBotGenerationMode.T2I:

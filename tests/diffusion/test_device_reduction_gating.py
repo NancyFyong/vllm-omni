@@ -18,9 +18,12 @@ import torch
 
 from vllm_omni.diffusion.data import VideoOutputTransportConfig
 from vllm_omni.diffusion.models.cosmos3.pipeline_cosmos3 import get_cosmos3_post_process_func
-from vllm_omni.diffusion.models.wan2_2.pipeline_wan2_2 import (
-    _should_reduce_video_on_device,
-    get_wan22_post_process_func,
+from vllm_omni.diffusion.models.wan2_2.pipeline_wan2_2 import get_wan22_post_process_func
+from vllm_omni.diffusion.postprocess.device_reduction import (
+    is_device_reduced,
+)
+from vllm_omni.diffusion.postprocess.device_reduction import (
+    should_reduce_video_on_device as _should_reduce_video_on_device,
 )
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
@@ -32,6 +35,64 @@ def _od_config(*, reduce: bool) -> SimpleNamespace:
 
 def _sp(output_type: str | None = None, *, interpolate: bool = False) -> SimpleNamespace:
     return SimpleNamespace(output_type=output_type, enable_frame_interpolation=interpolate)
+
+
+# --- the shared gate, exercised through each pipeline's call shape ----------
+
+
+def test_gate_closed_when_a_model_specific_veto_blocks_it() -> None:
+    """Cosmos3 passes guardrails and LingBot passes text-to-image as ``blocked``."""
+    assert _should_reduce_video_on_device(_od_config(reduce=True), [_sp("np")], output_type="np", blocked=True) is False
+
+
+def test_gate_open_without_sampling_params_or_output_type() -> None:
+    """HunyuanVideo's shape: no per-request output type, post_process fixes the format."""
+    assert _should_reduce_video_on_device(_od_config(reduce=True)) is True
+
+
+def test_gate_reads_a_single_sampling_params_object() -> None:
+    """MiniMax-H3 and Cosmos3 pass one request, not a batch."""
+    assert _should_reduce_video_on_device(_od_config(reduce=True), _sp("np")) is True
+    assert _should_reduce_video_on_device(_od_config(reduce=True), _sp("latent")) is False
+
+
+def test_gate_treats_unset_request_output_type_as_np() -> None:
+    assert _should_reduce_video_on_device(_od_config(reduce=True), _sp(None)) is True
+
+
+def test_omitting_output_type_differs_from_passing_none() -> None:
+    """Omitted means "this pipeline has no output type"; None is a real value.
+
+    Conflating them would reduce for pipelines whose output_type resolved to None
+    at runtime, which previously kept the float path.
+    """
+    config = _od_config(reduce=True)
+    assert _should_reduce_video_on_device(config) is True
+    assert _should_reduce_video_on_device(config, output_type=None) is False
+
+
+def test_interpolation_closes_the_gate_for_every_model() -> None:
+    """Deliberately stricter than the per-model gates this replaced.
+
+    Only the WAN pipelines implement interpolation, so the models that ignored
+    this flag never produced wrong pixels -- they just kept reducing. The shared
+    gate applies it everywhere so the contract is uniform, at the cost of the
+    optimization for a request that asks a model for interpolation it lacks.
+    """
+    config = _od_config(reduce=True)
+    assert _should_reduce_video_on_device(config, _sp("np", interpolate=True)) is False
+
+
+def test_is_device_reduced_only_matches_uint8_tensors() -> None:
+    assert is_device_reduced(torch.zeros(1, 2, 4, 4, 3, dtype=torch.uint8)) is True
+    assert is_device_reduced(torch.zeros(1, 3, 2, 4, 4, dtype=torch.float32)) is False
+    assert is_device_reduced(np_zeros()) is False
+
+
+def np_zeros():
+    import numpy as np
+
+    return np.zeros((1, 2, 4, 4, 3), dtype="uint8")
 
 
 # --- WAN batch-wide gate ---------------------------------------------------

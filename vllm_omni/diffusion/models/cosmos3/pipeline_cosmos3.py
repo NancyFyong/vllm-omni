@@ -68,7 +68,11 @@ from vllm_omni.diffusion.models.schedulers.scheduling_flow_match_euler_discrete 
 from vllm_omni.diffusion.models.schedulers.scheduling_flow_unipc_multistep import (
     FlowUniPCMultistepScheduler,
 )
-from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
+from vllm_omni.diffusion.postprocess.device_reduction import (
+    is_device_reduced,
+    reduce_video_to_uint8_frames,
+    should_reduce_video_on_device,
+)
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
@@ -694,7 +698,7 @@ def get_cosmos3_post_process_func(od_config: OmniDiffusionConfig):
                     "metadata": envelope_public_metadata,
                 }
             return processed_image
-        if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
+        if is_device_reduced(video):
             # Already uint8 [B, F, H, W, C] from the device-side reduction, which the
             # worker only performs when guardrails are off. Fail closed instead of
             # silently skipping the safety check if that ever stops holding.
@@ -3704,17 +3708,10 @@ class Cosmos3OmniDiffusersPipeline(
         if not is_t2i and not action_enabled:
             from .guardrails import is_guardrails_enabled
 
-            transport = getattr(self.od_config, "video_output_transport", None)
-            if (
-                transport is not None
-                and transport.reduce_video_on_device
-                and getattr(sp, "output_type", None) in (None, "np")
-                and not is_guardrails_enabled(self.od_config, sp)
-            ):
-                # Reduce to uint8 on the GPU before the D2H copy, but only when
-                # guardrails are off -- the safety check runs on the float video
-                # in post_process, so reducing early would bypass it. Image (t2i)
-                # and action outputs keep the float path.
+            # Guardrails block the reduction: the safety check runs on the float
+            # video in post_process, so reducing early would bypass it. Image
+            # (t2i) and action outputs keep the float path via the branch above.
+            if should_reduce_video_on_device(self.od_config, sp, blocked=is_guardrails_enabled(self.od_config, sp)):
                 video = reduce_video_to_uint8_frames(video)
         if _is_rank_zero():
             logger.info("Video decoded in %.2fs", time.time() - decode_start)

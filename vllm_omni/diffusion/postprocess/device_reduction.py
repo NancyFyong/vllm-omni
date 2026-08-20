@@ -4,11 +4,80 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Any
+
 import torch
 
 # VaeImageProcessor.denormalize: (x * 0.5 + 0.5).clamp(0, 1)
 _DENORM_SCALE = 0.5
 _DENORM_SHIFT = 0.5
+
+# Distinguishes "this pipeline has no output type to check" from output_type=None,
+# which is a real value that must keep the float path.
+_UNSET = object()
+
+
+def _as_sampling_params_list(sampling_params: Any) -> list[Any]:
+    """Normalize one sampling params object, a batch of them, or nothing."""
+    if sampling_params is None:
+        return []
+    if isinstance(sampling_params, Iterable) and not isinstance(sampling_params, str | bytes):
+        return list(sampling_params)
+    return [sampling_params]
+
+
+def should_reduce_video_on_device(
+    od_config: Any,
+    sampling_params: Any = None,
+    *,
+    output_type: Any = _UNSET,
+    blocked: bool = False,
+) -> bool:
+    """Whether a decoded video may be reduced to uint8 before the D2H copy.
+
+    One gate shared by every video pipeline, so the conditions that make the
+    reduction safe are defined once instead of per model. It is deliberately
+    conservative: anything unrecognised keeps the float path.
+
+    Args:
+        od_config: Config carrying ``video_output_transport``.
+        sampling_params: One request's sampling params, the whole batch, or
+            ``None`` when the pipeline has no per-request output type. Reduction
+            is batch-wide, so a single request needing float closes the gate.
+        output_type: Pipeline-level output type. Omit it for pipelines that
+            postprocess to a fixed format regardless of the request; passing
+            ``None`` explicitly keeps the float path, as ``None`` is not ``"np"``.
+        blocked: Model-specific veto, evaluated by the caller because the reason
+            is model-specific (Cosmos3 guardrails must see the float video,
+            LingBot text-to-image has no video path).
+    """
+    if blocked:
+        return False
+
+    transport = getattr(od_config, "video_output_transport", None)
+    if transport is None or not getattr(transport, "reduce_video_on_device", False):
+        return False
+
+    if output_type is not _UNSET and output_type != "np":
+        return False
+
+    for params in _as_sampling_params_list(sampling_params):
+        if (getattr(params, "output_type", None) or "np") != "np":
+            return False
+        # Frame interpolation consumes the float [B, C, F, H, W] video.
+        if getattr(params, "enable_frame_interpolation", False):
+            return False
+
+    return True
+
+
+def is_device_reduced(video: Any) -> bool:
+    """Whether ``video`` is already uint8 frames from the device-side reduction.
+
+    Used by each ``post_process`` to skip the float denormalize path.
+    """
+    return isinstance(video, torch.Tensor) and video.dtype == torch.uint8
 
 
 def reduce_video_to_uint8_frames(video: torch.Tensor, *, do_denormalize: bool = True) -> torch.Tensor:

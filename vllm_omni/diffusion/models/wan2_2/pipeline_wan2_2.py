@@ -35,6 +35,11 @@ from vllm_omni.diffusion.models.schedulers import FlowUniPCMultistepScheduler
 from vllm_omni.diffusion.models.wan2_2.scheduling_wan_euler import WanEulerScheduler
 from vllm_omni.diffusion.models.wan2_2.wan2_2_transformer import WanTransformer3DModel
 from vllm_omni.diffusion.postprocess import interpolate_video_tensor
+from vllm_omni.diffusion.postprocess.device_reduction import (
+    is_device_reduced,
+    reduce_video_to_uint8_frames,
+    should_reduce_video_on_device,
+)
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch, split_diffusion_output_by_request
@@ -192,29 +197,6 @@ def create_transformer_from_config(
     return WanTransformer3DModel(**kwargs)
 
 
-def _should_reduce_video_on_device(
-    od_config: OmniDiffusionConfig,
-    sampling_params_list: list,
-    *,
-    output_type: str,
-) -> bool:
-    """True when every request in the batch can consume device-reduced uint8 frames.
-
-    The reduction is batch-wide, so one request that needs the float tensor keeps
-    the whole batch on the float path: frame interpolation needs float
-    ``[B, C, F, H, W]``, and any output type other than ``"np"`` is postprocessed
-    differently downstream.
-    """
-    transport = getattr(od_config, "video_output_transport", None)
-    return (
-        output_type == "np"
-        and transport is not None
-        and transport.reduce_video_on_device
-        and all((sp.output_type or "np") == "np" for sp in sampling_params_list)
-        and not any(getattr(sp, "enable_frame_interpolation", False) for sp in sampling_params_list)
-    )
-
-
 def get_wan22_post_process_func(
     od_config: OmniDiffusionConfig,
 ):
@@ -233,7 +215,7 @@ def get_wan22_post_process_func(
             return video
         # Already uint8 [F, H, W, C] from the device-side reduction; skip the
         # float denormalize/scale below and pass the frames through unchanged.
-        if isinstance(video, torch.Tensor) and video.dtype == torch.uint8:
+        if is_device_reduced(video):
             # The worker only reduces when no request in the batch wants frame
             # interpolation. Fail closed instead of silently dropping it.
             if sampling_params is not None and getattr(sampling_params, "enable_frame_interpolation", False):
@@ -885,9 +867,7 @@ class Wan22Pipeline(
 
             # Reduce to uint8 on the GPU before the worker's D2H copy so Hop 1
             # carries ~4x less.
-            if _should_reduce_video_on_device(self.od_config, sampling_params_list, output_type=output_type):
-                from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
-
+            if should_reduce_video_on_device(self.od_config, sampling_params_list, output_type=output_type):
                 output = reduce_video_to_uint8_frames(output)
 
         if DEBUG_PERF:
