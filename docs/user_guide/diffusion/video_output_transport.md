@@ -34,7 +34,7 @@ vllm-omni serve <model> \
 | Field | Default | Effect |
 | --- | --- | --- |
 | `enable_device_postprocess` | `False` | Run denormalize/clamp/layout/uint8 on the device before the D2H copy. |
-| `transport_mode` | `"base64"` | `"base64"` returns an inline payload; `"url"` stores the artifact and returns a URL. |
+| `transport_mode` | `"base64"` | `"base64"` returns an inline payload; `"url"` stores the artifact and returns a URL; `"shared_memory"` returns a handle to raw frames for same-host consumers. |
 | `output_format` | `"mp4"` | Container for encoded artifacts: `mp4` or `webm`. |
 | `video_codec` | `None` | Encoder name. `None` means the container's default (h264 for mp4, VP9 for webm). |
 | `video_codec_options` | `{}` | Encoder options. Empty means the fast presets for whichever codec runs. |
@@ -114,22 +114,39 @@ own defaults.
 
 ## Zero-copy for co-located consumers
 
-A consumer in another process on the same host can read a worker's video output
-directly out of shared memory instead of copying it:
+An RL rollout worker on the same host does not need the video encoded at all.
+With `transport_mode: "shared_memory"` the server publishes the raw uint8 frames
+in shared memory and returns a handle instead of a payload, so the consumer maps
+the frames rather than decoding a re-serialised copy of them:
 
 ```python
-from vllm_omni.diffusion.ipc import borrowed_diffusion_output
+from vllm_omni.diffusion.ipc import borrowed_shm_array
 
-with borrowed_diffusion_output(packed_output) as output:
-    video = output.output["video"]  # a view over the shared segment
-    frames = video.clone()         # anything outliving the block must be copied
+handle = response["data"][0]["shm_handle"]
+
+with borrowed_shm_array(handle) as frames:   # a view, no copy
+    batch = frames.copy()                    # anything outliving the block must be copied
 ```
+
+The consumer owns the release, which is the only place that knows when the
+frames are no longer needed. Leaving the `with` block unlinks the segment.
 
 !!! warning
 
-    Leaving the `with` block invalidates every borrowed tensor. Reading one
-    afterwards is a use-after-free, the same contract as `free()`, Arrow, or
-    CUDA IPC.
+    The yielded array aliases shared memory and becomes invalid when the block
+    exits. Reading it afterwards is a use-after-free, the same contract as
+    `free()`, Arrow, or CUDA IPC. It is also writable, so a mutation is visible
+    to every other holder.
 
-This is a library API for co-located frameworks; the engine's own output path
-copies as before.
+This mode is only valid when the consumer runs on the same host, and it skips
+MP4 encoding, so the frames arrive losslessly. Measured with
+`benchmarks/diffusion/bench_video_output_sinks.py` on a 247 MiB video:
+
+| Sink | Bytes crossing the boundary | Consumer RSS | Lossless |
+| --- | --- | --- | --- |
+| `base64` | 67.2 MiB | +535.7 MiB | no |
+| `shared_memory` | 90 B | +246.3 MiB | yes |
+
+The engine's internal worker to scheduler hop still copies. Borrowing there
+saves nothing, because the engine has to forward the output as a long-lived
+owned object, and it has no safe point at which to release the segment.

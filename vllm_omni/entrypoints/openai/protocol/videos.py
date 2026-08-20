@@ -305,7 +305,14 @@ class VideoData(BaseModel):
     """Single generated video data."""
 
     b64_json: str | None = Field(default=None, description="Base64-encoded MP4 video")
-    url: str | None = Field(default=None, description="Video URL (not implemented)")
+    url: str | None = Field(default=None, description="URL of the stored video artifact")
+    shm_handle: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Shared-memory handle for raw uint8 frames, returned when the video transport is in "
+            "shared_memory mode. Same-host consumers map it zero-copy and are responsible for releasing it."
+        ),
+    )
     revised_prompt: str | None = Field(default=None, description="Revised prompt (OpenAI compatibility, always null)")
     action: VideoAction | None = Field(default=None, description="Generated action sequence metadata, if any")
 

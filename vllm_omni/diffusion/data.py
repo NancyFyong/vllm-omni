@@ -623,6 +623,10 @@ class VideoOutputTransportConfig:
     #   "base64": inline b64_json, the OpenAI-compatible default.
     #   "url":    store the artifact and return a URL, avoiding the ~33% base64
     #             inflation and keeping the encoded video out of the JSON body.
+    #   "shared_memory": publish raw uint8 frames in shared memory and return a
+    #             handle. Same-host consumers only; skips MP4 encoding and base64
+    #             entirely, so an RL rollout worker reads the frames losslessly
+    #             without a serialised copy.
     transport_mode: str = "base64"
 
     # Container format for encoded video artifacts.
@@ -640,7 +644,7 @@ class VideoOutputTransportConfig:
     # come from; encoder families do not accept each other's options.
     video_codec_options: dict[str, str] = field(default_factory=dict)
 
-    VALID_TRANSPORT_MODES: ClassVar[frozenset[str]] = frozenset({"base64", "url"})
+    VALID_TRANSPORT_MODES: ClassVar[frozenset[str]] = frozenset({"base64", "url", "shared_memory"})
     VALID_OUTPUT_FORMATS: ClassVar[frozenset[str]] = frozenset({"mp4", "webm"})
 
     def __post_init__(self):

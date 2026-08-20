@@ -353,6 +353,32 @@ class OmniOpenAIServingVideo:
 
         settings = self._resolve_video_encoder(request)
 
+        if settings.transport_mode == "shared_memory":
+            # Skip encoding altogether: a same-host consumer maps the raw frames,
+            # so MP4 encoding and base64 would only add loss and copies.
+            from vllm_omni.diffusion.ipc import export_array_to_shm
+
+            from .video_api_utils import _coerce_video_to_uint8_frames
+
+            _t_shm_start = time.perf_counter()
+            video_data = [
+                VideoData(
+                    shm_handle=export_array_to_shm(_coerce_video_to_uint8_frames(video)),
+                    action=artifacts.actions[idx],
+                )
+                for idx, video in enumerate(artifacts.videos)
+            ]
+            logger.info(
+                "Video response publishing (shared_memory): %.2f ms",
+                (time.perf_counter() - _t_shm_start) * 1000,
+            )
+            return VideoGenerationResponse(
+                created=int(time.time()),
+                data=video_data,
+                stage_durations=artifacts.stage_durations,
+                peak_memory_mb=artifacts.peak_memory_mb,
+            )
+
         _t_encode_start = time.perf_counter()
         encoded = [
             _encode_video_bytes(

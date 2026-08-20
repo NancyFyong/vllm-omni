@@ -204,3 +204,109 @@ async def test_url_sink_prefers_the_published_url_when_storage_has_one(monkeypat
 
     assert url.startswith("https://cdn.example.com/v/")
     assert url.endswith(".webm")
+
+
+# --- shared-memory sink for same-host consumers ---------------------------
+
+
+async def _generate_with_sink(monkeypatch, transport_mode: str, frames: np.ndarray):
+    """Drive the real generate_videos sink selection with a stubbed generation."""
+    from vllm_omni.entrypoints.openai.serving_video import (
+        OmniOpenAIServingVideo,
+        VideoGenerationArtifacts,
+    )
+
+    artifacts = VideoGenerationArtifacts(
+        videos=[frames],
+        audios=[None],
+        actions=[None],
+        audio_sample_rate=16000,
+        output_fps=8,
+        stage_durations={},
+        peak_memory_mb=0.0,
+    )
+
+    serving = object.__new__(OmniOpenAIServingVideo)
+
+    async def _fake_run_and_extract(request, reference_id, **kwargs):
+        return artifacts
+
+    monkeypatch.setattr(serving, "_run_and_extract", _fake_run_and_extract, raising=False)
+    monkeypatch.setattr(
+        serving,
+        "_resolve_video_encoder",
+        lambda request, low_latency=False: resolve_video_encoder_settings(_client(transport_mode=transport_mode)),
+        raising=False,
+    )
+    return await OmniOpenAIServingVideo.generate_videos(serving, SimpleNamespace(extra_params=None), "req-1")
+
+
+@pytest.mark.asyncio
+async def test_shared_memory_sink_returns_a_handle_and_no_inline_payload(monkeypatch):
+    from vllm_omni.diffusion.ipc import borrowed_shm_array
+
+    frames = _frames(4)
+    response = await _generate_with_sink(monkeypatch, "shared_memory", frames)
+
+    (item,) = response.data
+    assert item.b64_json is None
+    assert item.url is None
+    assert item.shm_handle is not None
+
+    # The handle is metadata only: a few hundred bytes stand in for the payload.
+    import json
+
+    assert len(json.dumps(item.shm_handle)) < 512
+
+    with borrowed_shm_array(item.shm_handle) as view:
+        # Lossless, unlike the encoded sinks.
+        np.testing.assert_array_equal(view, frames)
+
+
+@pytest.mark.asyncio
+async def test_base64_sink_is_still_the_default_shape(monkeypatch):
+    response = await _generate_with_sink(monkeypatch, "base64", _frames(4))
+    (item,) = response.data
+    assert item.shm_handle is None
+    assert item.url is None
+    assert item.b64_json
+
+
+@pytest.mark.asyncio
+async def test_shared_memory_sink_leaves_nothing_behind_after_release(monkeypatch):
+    import os
+
+    from vllm_omni.diffusion.ipc import borrowed_shm_array
+
+    response = await _generate_with_sink(monkeypatch, "shared_memory", _frames(4))
+    name = response.data[0].shm_handle["name"]
+    assert os.path.exists(f"/dev/shm/{name}")
+
+    with borrowed_shm_array(response.data[0].shm_handle):
+        pass
+
+    assert not os.path.exists(f"/dev/shm/{name}")
+
+
+@pytest.mark.asyncio
+async def test_shared_memory_sink_is_a_view_not_a_copy(monkeypatch):
+    """The decisive zero-copy proof: a write from outside must be visible.
+
+    Without this, replacing the borrow with a defensive copy would keep every
+    other test green while silently undoing the point of the sink.
+    """
+    from multiprocessing import shared_memory
+
+    from vllm_omni.diffusion.ipc import borrowed_shm_array
+
+    response = await _generate_with_sink(monkeypatch, "shared_memory", _frames(4))
+    handle = response.data[0].shm_handle
+
+    with borrowed_shm_array(handle) as view:
+        assert view.base is not None, "a copy would have base None"
+        external = shared_memory.SharedMemory(name=handle["name"])
+        try:
+            external.buf[0] = 123
+            assert view.reshape(-1)[0] == 123
+        finally:
+            external.close()

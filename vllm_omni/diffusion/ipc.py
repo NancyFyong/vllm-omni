@@ -431,6 +431,39 @@ def unpack_diffusion_output_shm(
     return output
 
 
+def export_array_to_shm(array: np.ndarray) -> dict[str, Any]:
+    """Publish an array in shared memory and return a handle describing it.
+
+    For handing a video to a consumer process on the same host: the handle is a
+    few hundred bytes of JSON-friendly metadata, so the consumer maps the frames
+    instead of receiving an encoded, re-serialised copy of them. The segment
+    outlives this call and the consumer is responsible for releasing it, which is
+    the only place that knows when the frames are no longer needed.
+    """
+    return _array_to_shm(array)
+
+
+@contextlib.contextmanager
+def borrowed_shm_array(handle: dict[str, Any], *, borrow: bool = True):
+    """Map an array published by :func:`export_array_to_shm`, releasing on exit.
+
+    The consumer-side half of the shared-memory video sink.
+
+    .. warning::
+        With ``borrow=True`` the yielded array aliases shared memory and becomes
+        invalid when the block exits -- using it afterwards is a use-after-free
+        and will segfault. Copy out anything that must outlive the block.
+
+    Pass ``borrow=False`` to copy instead; the copy stays valid afterwards and
+    the segment is released before the block is even entered.
+    """
+    borrowed: list[str] = []
+    try:
+        yield _array_from_shm(handle, borrow=borrow, borrowed=borrowed)
+    finally:
+        release_borrowed_segments(borrowed)
+
+
 @contextlib.contextmanager
 def borrowed_diffusion_output(output: object, *, borrow: bool = True):
     """Yield *output* with its SHM payloads materialised, releasing on exit.
