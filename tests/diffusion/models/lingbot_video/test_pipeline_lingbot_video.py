@@ -493,7 +493,7 @@ def test_t2i_decodes_and_returns_the_unique_frame():
         torch.ones(1, 2, 4),
         torch.ones(1, 2, dtype=torch.long),
     )
-    pipeline._decode_latents = lambda latents: torch.ones(1, 16, 16, 3)
+    pipeline._decode_latents = lambda latents, **kwargs: torch.ones(1, 16, 16, 3)
 
     image = pipeline._generate(
         prompt="a still robot",

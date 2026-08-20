@@ -315,9 +315,9 @@ def test_async_video_generation_bypasses_base64(test_client, mocker: MockerFixtu
         return_value=b"raw-mp4-bytes",
     )
 
-    # We assert that encode_video_base64 is never called
+    # We assert the response is never base64-encoded
     mock_base64 = mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        "vllm_omni.entrypoints.openai.serving_video.base64.b64encode",
         side_effect=RuntimeError("Regression: async video path should not base64 encode"),
     )
 
@@ -342,7 +342,7 @@ def test_async_video_generation_with_audio_bypasses_base64(test_client, mocker: 
     )
 
     mock_base64 = mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
+        "vllm_omni.entrypoints.openai.serving_video.base64.b64encode",
         side_effect=RuntimeError("Regression: async video path should not base64 encode"),
     )
 
@@ -1157,8 +1157,8 @@ def test_worker_fps_multiplier_is_applied_to_async_encoding(test_client, mocker:
 def test_audio_sample_rate_comes_from_model_config(test_client, mocker: MockerFixture):
     audio_sample_rates = []
 
-    def _fake_encode(video, fps, audio=None, audio_sample_rate=None, video_codec_options=None):
-        del video, fps, audio, video_codec_options
+    def _fake_encode(video, fps, audio=None, audio_sample_rate=None, video_codec_options=None, **kwargs):
+        del video, fps, audio, video_codec_options, kwargs
         audio_sample_rates.append(audio_sample_rate)
         return b"fake-video"
 
@@ -1251,8 +1251,8 @@ def test_video_generation_response_exposes_action_payload(mocker: MockerFixture)
 
     engine.generate = _generate
     mocker.patch(
-        "vllm_omni.entrypoints.openai.serving_video.encode_video_base64",
-        return_value="encoded-video",
+        "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
+        return_value=b"encoded-video",
     )
 
     response = asyncio.run(
