@@ -231,7 +231,7 @@ def test_unpack_without_borrow_list_still_releases_by_default() -> None:
 
 @pytest.mark.parametrize(
     "kwargs",
-    [{"transport_mode": "bogus"}, {"shm_threshold_bytes": 0}, {"shm_threshold_bytes": -1}],
+    [{"shm_threshold_bytes": 0}, {"shm_threshold_bytes": -1}, {"video_codec_options": "ultrafast"}],
 )
 def test_invalid_transport_config_is_rejected(kwargs: dict) -> None:
     with pytest.raises(ValueError):
@@ -240,6 +240,5 @@ def test_invalid_transport_config_is_rejected(kwargs: dict) -> None:
 
 def test_transport_config_defaults_preserve_current_behaviour() -> None:
     config = VideoOutputTransportConfig()
-    assert config.transport_mode == "copy"
-    assert config.zero_copy is False
     assert config.shm_threshold_bytes == _SHM_TENSOR_THRESHOLD
+    assert config.reduce_video_on_device is False

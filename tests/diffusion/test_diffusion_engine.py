@@ -587,8 +587,8 @@ class TestRequestBatchAdmission:
         assert config.video_output_transport.reduce_video_on_device is False
 
     def test_config_rejects_invalid_video_output_transport_mapping(self) -> None:
-        with pytest.raises(ValueError, match="transport_mode"):
-            OmniDiffusionConfig(model="test", video_output_transport={"transport_mode": "bogus"})
+        with pytest.raises(ValueError, match="shm_threshold_bytes"):
+            OmniDiffusionConfig(model="test", video_output_transport={"shm_threshold_bytes": 0})
 
     def test_config_normalizes_request_batch_max_wait_ms_to_float(self) -> None:
         config = OmniDiffusionConfig(model="test", request_batch_max_wait_ms=5)

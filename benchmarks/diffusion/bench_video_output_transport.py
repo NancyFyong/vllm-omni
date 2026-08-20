@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Measure host-memory cost of the two video output transport modes.
+"""Measure host-memory cost of the two shared-memory read strategies.
 
 The diffusion worker hands large video tensors to the engine through POSIX
 shared memory. Historically the reader always copied the payload out of the
 segment and unlinked it, so a single video existed twice in host RAM at the
-moment of hand-off. ``transport_mode="shared_memory"`` lets the reader map the
-segment instead, removing that second copy.
+moment of hand-off. Borrowing (``borrow=True``) lets the reader map the segment
+instead, removing that second copy.
 
 This benchmark isolates the *reader* cost the way production does it:
 
@@ -160,7 +160,7 @@ def main() -> int:
     env["PYTHONPATH"] = os.pathsep.join([repo_root, env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
 
     print(f"payload: {args.size_mb} MiB uint8 video tensor, reader measured in a fresh process\n")
-    print(f"{'transport_mode':<16} {'RSS before':>14} {'RSS peak':>14} {'growth':>12}")
+    print(f"{'read strategy':<16} {'RSS before':>14} {'RSS peak':>14} {'growth':>12}")
     print("-" * 60)
 
     results: dict[str, float] = {}

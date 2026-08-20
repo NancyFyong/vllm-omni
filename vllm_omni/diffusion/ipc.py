@@ -445,10 +445,9 @@ def borrowed_diffusion_output(output: object, *, borrow: bool = True):
         use-after-free and will segfault. Copy out (``.clone()``) anything that
         must outlive the block.
 
-    Pass ``borrow=False`` (e.g. ``borrow=config.video_output_transport.zero_copy``)
-    to get the copying behaviour through the same call site; the block then
-    yields private copies that stay valid afterwards and the release step is a
-    no-op.
+    Pass ``borrow=False`` to get the copying behaviour through the same call
+    site; the block then yields private copies that stay valid afterwards and
+    the release step is a no-op.
     """
     borrowed: list[str] = []
     try:

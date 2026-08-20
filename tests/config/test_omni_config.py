@@ -976,29 +976,28 @@ def test_diffusion_config_normalizes_video_output_transport_from_mapping():
     from vllm_omni.diffusion.data import VideoOutputTransportConfig
 
     cfg = omni_config_module._DiffusionConfigProjection(
-        video_output_transport={"transport_mode": "shared_memory", "shm_threshold_bytes": 8192},
+        video_output_transport={"shm_threshold_bytes": 8192, "reduce_video_on_device": True},
     )
 
     assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
-    assert cfg.video_output_transport.transport_mode == "shared_memory"
     assert cfg.video_output_transport.shm_threshold_bytes == 8192
-    assert cfg.video_output_transport.zero_copy is True
+    assert cfg.video_output_transport.reduce_video_on_device is True
 
 
-def test_diffusion_config_defaults_video_output_transport_to_copy_mode():
+def test_diffusion_config_defaults_video_output_transport():
     from vllm_omni.diffusion.data import VideoOutputTransportConfig
 
     cfg = omni_config_module._DiffusionConfigProjection()
 
     assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
-    assert cfg.video_output_transport.transport_mode == "copy"
-    assert cfg.video_output_transport.zero_copy is False
+    assert cfg.video_output_transport.reduce_video_on_device is False
+    assert cfg.video_output_transport.shm_threshold_bytes == 1_000_000
 
 
 def test_diffusion_config_rejects_invalid_video_output_transport():
     """A typo in a deploy config must fail loudly, not degrade silently."""
     with pytest.raises((ValueError, ValidationError)):
-        omni_config_module._DiffusionConfigProjection(video_output_transport={"transport_mode": "zerocopy"})
+        omni_config_module._DiffusionConfigProjection(video_output_transport={"shm_threshold_bytes": -1})
 
 
 def test_video_output_transport_is_bridged_to_omni_diffusion_config():
