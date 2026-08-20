@@ -620,9 +620,16 @@ class VideoOutputTransportConfig:
     # path.
     reduce_video_on_device: bool = False
 
+    # Video encoder for the engine->HTTP hop. A hardware encoder (e.g.
+    # "h264_nvenc") that the host cannot open falls back to the software default,
+    # so this is safe to set across mixed hardware.
+    video_codec: str = "h264"
+
     # MP4 encoder options for the engine->HTTP hop, overridable per request via
-    # ``extra_params["video_codec_options"]``.
-    video_codec_options: dict[str, str] = field(default_factory=lambda: {"preset": "ultrafast", "threads": "0"})
+    # ``extra_params["video_codec_options"]``. Empty means "use the fast presets
+    # for the selected codec", which is where the ultrafast/zerolatency defaults
+    # come from; encoder families do not accept each other's options.
+    video_codec_options: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.shm_threshold_bytes <= 0:

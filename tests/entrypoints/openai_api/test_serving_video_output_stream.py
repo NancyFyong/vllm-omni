@@ -62,8 +62,8 @@ def _build_test_app(
         def close(self):
             return final_chunk
 
-    def _make_encoder(*, output_format, fps, video_codec_options=None):
-        del output_format, fps, video_codec_options
+    def _make_encoder(*, output_format, fps, video_codec_options=None, video_codec=None):
+        del output_format, fps, video_codec_options, video_codec
         return FakeStreamingVideoEncoder()
 
     encoder_factory = mocker.MagicMock(side_effect=_make_encoder)

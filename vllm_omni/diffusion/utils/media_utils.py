@@ -4,12 +4,94 @@
 
 from __future__ import annotations
 
+import functools
 import io
 from fractions import Fraction
 from typing import Any, cast
 
 import av
 import numpy as np
+from vllm.logger import init_logger
+
+logger = init_logger(__name__)
+
+DEFAULT_VIDEO_CODEC = "h264"
+
+# Fast-preset options per encoder. FFmpeg rejects options that belong to another
+# encoder family (passing NVENC's "preset=p1" to libx264 fails avcodec_open2),
+# so these cannot be shared and must follow whichever codec actually runs.
+_FAST_CODEC_OPTIONS: dict[str, dict[str, str]] = {
+    "h264": {"preset": "ultrafast", "threads": "0"},
+    "libx264": {"preset": "ultrafast", "threads": "0"},
+    "hevc": {"preset": "ultrafast", "threads": "0"},
+    "libx265": {"preset": "ultrafast", "threads": "0"},
+    "h264_nvenc": {"preset": "p1", "tune": "ull"},
+    "hevc_nvenc": {"preset": "p1", "tune": "ull"},
+}
+
+# Extra options for latency-sensitive streaming. NVENC's "ull" tune above already
+# implies ultra-low latency, so only the software encoders need this.
+_LOW_LATENCY_OPTIONS: dict[str, dict[str, str]] = {
+    "h264": {"tune": "zerolatency"},
+    "libx264": {"tune": "zerolatency"},
+    "hevc": {"tune": "zerolatency"},
+    "libx265": {"tune": "zerolatency"},
+}
+
+
+@functools.cache
+def _encoder_is_usable(codec: str) -> bool:
+    """Whether this FFmpeg build and this machine can actually open ``codec``.
+
+    ``add_stream`` accepts an unusable encoder and only fails later on the first
+    ``encode()``, so the encoder has to be opened to find out. Hardware encoders
+    are the usual mismatch: a build can expose ``h264_nvenc`` on a GPU that has
+    no NVENC engine (Hopper data-center parts ship none).
+    """
+    try:
+        ctx = av.codec.CodecContext.create(codec, "w")
+        ctx.width, ctx.height, ctx.pix_fmt = 64, 64, "yuv420p"
+        ctx.open()
+    except Exception:
+        return False
+    return True
+
+
+def default_video_codec_options(codec: str, *, low_latency: bool = False) -> dict[str, str]:
+    """Fast-preset encoder options matching ``codec``."""
+    options = dict(_FAST_CODEC_OPTIONS.get(codec, {}))
+    if low_latency:
+        options.update(_LOW_LATENCY_OPTIONS.get(codec, {}))
+    return options
+
+
+def resolve_encoder_settings(
+    codec: str | None,
+    codec_options: dict[str, str] | None = None,
+    *,
+    low_latency: bool = False,
+    fallback: str = DEFAULT_VIDEO_CODEC,
+) -> tuple[str, dict[str, str]]:
+    """Pick an encoder that can run here plus the options that match it.
+
+    ``codec_options`` are honoured only when the requested encoder is the one
+    that ends up running. If it is unavailable and we fall back, its options are
+    dropped in favour of the fallback's own defaults, because FFmpeg refuses
+    options from a different encoder family and would fail the whole encode.
+
+    Empty ``codec_options`` means "use the fast defaults for this codec".
+    """
+    requested = codec or fallback
+    if requested != fallback and not _encoder_is_usable(requested):
+        logger.warning(
+            "Video encoder %r cannot be opened on this host; falling back to %r and its default options.",
+            requested,
+            fallback,
+        )
+        return fallback, default_video_codec_options(fallback, low_latency=low_latency)
+    if codec_options:
+        return requested, dict(codec_options)
+    return requested, default_video_codec_options(requested, low_latency=low_latency)
 
 
 class FragmentedMP4Muxer:

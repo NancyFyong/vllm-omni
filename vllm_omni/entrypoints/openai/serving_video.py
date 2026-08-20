@@ -29,7 +29,11 @@ from vllm_omni.entrypoints.openai.stage_params import (
     get_default_sampling_params_list,
 )
 from vllm_omni.entrypoints.openai.utils import get_stage_type, parse_lora_request
-from vllm_omni.entrypoints.openai.video_api_utils import _encode_video_bytes, encode_video_base64
+from vllm_omni.entrypoints.openai.video_api_utils import (
+    _encode_video_bytes,
+    encode_video_base64,
+    resolve_video_encoder_settings,
+)
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams, OmniTextPrompt
 from vllm_omni.model_extras import should_preserve_reference_image_size
 from vllm_omni.outputs.output_metadata import (
@@ -306,23 +310,15 @@ class OmniOpenAIServingVideo:
             peak_memory_mb=self._extract_peak_memory_mb(result),
         )
 
-    def _resolve_video_codec_options(self, request: VideoGenerationRequest) -> dict:
-        """Resolve MP4 encoder options for the engine->HTTP hop.
+    def _resolve_video_encoder(self, request: VideoGenerationRequest, *, low_latency: bool = False) -> tuple[str, dict]:
+        """Resolve the MP4 encoder and its options for the engine->HTTP hop.
 
-        Precedence: per-request ``extra_params["video_codec_options"]`` overrides
-        the deployment's ``video_output_transport.video_codec_options``, which
-        defaults to ``{"preset": "ultrafast", "threads": "0"}``.
+        Precedence for both codec and options: per-request ``extra_params``
+        overrides the deployment's ``video_output_transport``. An unavailable
+        hardware encoder falls back to software, and empty options mean the fast
+        presets for whichever codec runs.
         """
-        get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
-        od_config = get_od_config() if callable(get_od_config) else getattr(self._engine_client, "od_config", None)
-        transport = getattr(od_config, "video_output_transport", None) if od_config is not None else None
-        configured = getattr(transport, "video_codec_options", None)
-        codec_options = (
-            dict(configured) if isinstance(configured, dict) and configured else {"preset": "ultrafast", "threads": "0"}
-        )
-        if isinstance(request.extra_params, dict) and "video_codec_options" in request.extra_params:
-            codec_options = request.extra_params["video_codec_options"]
-        return codec_options
+        return resolve_video_encoder_settings(self._engine_client, request.extra_params, low_latency=low_latency)
 
     async def generate_videos(
         self,
@@ -341,13 +337,18 @@ class OmniOpenAIServingVideo:
             reference_audio=reference_audio,
         )
 
-        video_codec_options = self._resolve_video_codec_options(request)
+        video_codec, video_codec_options = self._resolve_video_encoder(request)
 
         _t_encode_start = time.perf_counter()
         video_data = [
             VideoData(
                 b64_json=(
-                    encode_video_base64(video, fps=artifacts.output_fps, video_codec_options=video_codec_options)
+                    encode_video_base64(
+                        video,
+                        fps=artifacts.output_fps,
+                        video_codec_options=video_codec_options,
+                        video_codec=video_codec,
+                    )
                     if artifacts.audios[idx] is None
                     else encode_video_base64(
                         video,
@@ -355,6 +356,7 @@ class OmniOpenAIServingVideo:
                         audio=artifacts.audios[idx],
                         audio_sample_rate=artifacts.audio_sample_rate,
                         video_codec_options=video_codec_options,
+                        video_codec=video_codec,
                     )
                 ),
                 action=artifacts.actions[idx],
@@ -395,7 +397,7 @@ class OmniOpenAIServingVideo:
             )
         audio = artifacts.audios[0]
 
-        video_codec_options = self._resolve_video_codec_options(request)
+        video_codec, video_codec_options = self._resolve_video_encoder(request)
 
         action = artifacts.actions[0]
         if action is not None and isinstance(artifacts.videos[0], dict):
@@ -408,6 +410,7 @@ class OmniOpenAIServingVideo:
             fps=artifacts.output_fps,
             **({"audio": audio, "audio_sample_rate": artifacts.audio_sample_rate} if audio is not None else {}),
             video_codec_options=video_codec_options,
+            video_codec=video_codec,
         )
         _t_encode_ms = (time.perf_counter() - _t_encode_start) * 1000
         logger.info("Video response encoding (MP4 bytes): %.2f ms", _t_encode_ms)

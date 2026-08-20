@@ -18,6 +18,7 @@ import numpy as np
 import torch
 from PIL import Image, UnidentifiedImageError
 from vllm import envs
+from vllm.logger import init_logger
 from vllm.multimodal.video import (
     VIDEO_LOADER_REGISTRY,
     VideoBackend,
@@ -34,6 +35,8 @@ from vllm_omni.entrypoints.openai.protocol.videos import (
     UrlVideoReference,
     VideoReference,
 )
+
+logger = init_logger(__name__)
 
 
 class VideoFrames(list[Image.Image]):
@@ -520,15 +523,56 @@ def _coerce_video_to_uint8_frames(video: Any) -> np.ndarray:
     return frames_u8
 
 
+def resolve_video_encoder_settings(
+    engine_client: Any,
+    extra_params: Any = None,
+    *,
+    low_latency: bool = False,
+) -> tuple[str, dict[str, str]]:
+    """Resolve the video encoder for one request: deployment config + overrides.
+
+    Shared by the HTTP and WebSocket video endpoints so the encoder policy lives
+    in one place instead of being duplicated per encode site. Per-request
+    ``extra_params["video_codec"]``/``["video_codec_options"]`` win over the
+    deployment's ``video_output_transport``; an unavailable hardware encoder
+    falls back to software, and empty options mean the codec's fast presets.
+    """
+    from vllm_omni.diffusion.utils.media_utils import resolve_encoder_settings
+    from vllm_omni.entrypoints.openai.utils import resolve_diffusion_od_config
+
+    try:
+        od_config = resolve_diffusion_od_config(engine_client) or getattr(engine_client, "od_config", None)
+    except Exception:
+        # Encoder policy is best-effort: some engine wrappers raise while
+        # resolving the diffusion config, and that must not fail the request when
+        # the built-in defaults would encode it fine.
+        logger.debug("Could not resolve the diffusion config for encoder settings.", exc_info=True)
+        od_config = None
+    transport = getattr(od_config, "video_output_transport", None) if od_config is not None else None
+
+    codec = getattr(transport, "video_codec", None)
+    configured = getattr(transport, "video_codec_options", None)
+    codec_options = dict(configured) if isinstance(configured, dict) else None
+
+    overrides = extra_params if isinstance(extra_params, dict) else {}
+    if "video_codec" in overrides:
+        codec = overrides["video_codec"]
+    if "video_codec_options" in overrides:
+        codec_options = overrides["video_codec_options"]
+
+    return resolve_encoder_settings(codec, codec_options, low_latency=low_latency)
+
+
 def _encode_video_bytes(
     video: Any,
     fps: int,
     audio: Any | None = None,
     audio_sample_rate: int | None = None,
     video_codec_options: dict[str, str] | None = None,
+    video_codec: str | None = None,
 ) -> bytes:
     """Encode a video payload into MP4 bytes, optionally muxing audio."""
-    from vllm_omni.diffusion.utils.media_utils import mux_video_audio_bytes
+    from vllm_omni.diffusion.utils.media_utils import DEFAULT_VIDEO_CODEC, mux_video_audio_bytes
 
     audio_np = _coerce_audio_to_numpy(audio) if audio is not None else None
 
@@ -537,6 +581,7 @@ def _encode_video_bytes(
         audio_np,
         fps=float(fps),
         audio_sample_rate=audio_sample_rate or 24000,
+        video_codec=video_codec or DEFAULT_VIDEO_CODEC,
         video_codec_options=video_codec_options,
     )
 
@@ -549,14 +594,16 @@ class FragmentedMP4VideoEncoder:
         *,
         fps: int | float,
         video_codec_options: dict[str, str] | None = None,
+        video_codec: str | None = None,
     ) -> None:
         self._fps = float(fps)
         self._video_codec_options = video_codec_options
+        self._video_codec = video_codec
         self._muxer: Any | None = None
 
     def encode(self, video: Any) -> bytes:
         """Encode one generated video chunk and return newly emitted fMP4 bytes."""
-        from vllm_omni.diffusion.utils.media_utils import FragmentedMP4Muxer
+        from vllm_omni.diffusion.utils.media_utils import DEFAULT_VIDEO_CODEC, FragmentedMP4Muxer
 
         frames_u8 = _coerce_video_to_uint8_frames(video)
         if self._muxer is None:
@@ -564,6 +611,7 @@ class FragmentedMP4VideoEncoder:
                 width=frames_u8.shape[2],
                 height=frames_u8.shape[1],
                 fps=self._fps,
+                video_codec=self._video_codec or DEFAULT_VIDEO_CODEC,
                 video_codec_options=self._video_codec_options,
             )
         return self._muxer.mux_video_frames(frames_u8)
@@ -583,10 +631,11 @@ def create_streaming_video_encoder(
     output_format: StreamingVideoFormat,
     fps: int | float,
     video_codec_options: dict[str, str] | None = None,
+    video_codec: str | None = None,
 ) -> FragmentedMP4VideoEncoder:
     """Create an incremental encoder for the requested WebSocket video format."""
     if output_format == "m4s":
-        return FragmentedMP4VideoEncoder(fps=fps, video_codec_options=video_codec_options)
+        return FragmentedMP4VideoEncoder(fps=fps, video_codec_options=video_codec_options, video_codec=video_codec)
     raise ValueError(f"Unsupported streaming video format: {output_format}")
 
 
@@ -596,9 +645,15 @@ def encode_video_base64(
     audio: Any | None = None,
     audio_sample_rate: int | None = None,
     video_codec_options: dict[str, str] | None = None,
+    video_codec: str | None = None,
 ) -> str:
     """Encode a video (frames/array/tensor) to base64 MP4."""
     video_bytes = _encode_video_bytes(
-        video, fps=fps, audio=audio, audio_sample_rate=audio_sample_rate, video_codec_options=video_codec_options
+        video,
+        fps=fps,
+        audio=audio,
+        audio_sample_rate=audio_sample_rate,
+        video_codec_options=video_codec_options,
+        video_codec=video_codec,
     )
     return base64.b64encode(video_bytes).decode("utf-8")

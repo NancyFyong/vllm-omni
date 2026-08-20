@@ -56,6 +56,7 @@ from vllm_omni.entrypoints.openai.video_api_utils import (
     StreamingVideoFormat,
     create_streaming_video_encoder,
     decode_input_reference,
+    resolve_video_encoder_settings,
 )
 from vllm_omni.inputs.data import (
     OmniDiffusionSamplingParams,
@@ -461,15 +462,17 @@ class OmniStreamingVideoOutputHandler:
     ) -> AsyncGenerator[tuple[bytes, dict[str, Any]], None]:
         """Yield encoded video bytes from diffusion streaming outputs."""
         prompt, gen_params, vp = await self._build_prompt_and_sampling_params(request)
-        video_codec_options = {"preset": "ultrafast", "threads": "0", "tune": "zerolatency"}
-        if isinstance(request.extra_params, dict) and "video_codec_options" in request.extra_params:
-            video_codec_options = request.extra_params["video_codec_options"]
+        # Streaming is latency-sensitive, so the resolved options add zerolatency.
+        video_codec, video_codec_options = resolve_video_encoder_settings(
+            self._engine_client, request.extra_params, low_latency=True
+        )
 
         output_fps = vp.fps or gen_params.resolved_frame_rate or 16
         encoder = create_streaming_video_encoder(
             output_format=output_format,
             fps=output_fps,
             video_codec_options=video_codec_options,
+            video_codec=video_codec,
         )
         completed = False
         try:
