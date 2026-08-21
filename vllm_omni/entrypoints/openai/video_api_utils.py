@@ -490,8 +490,23 @@ def _coerce_audio_to_numpy(audio: Any) -> np.ndarray:
     return arr.astype(np.float32)
 
 
+def _already_uint8_frames(video: Any) -> bool:
+    """Whether a payload is already the (F, H, W, C) uint8 frames we want.
+
+    A device-reduced video arrives like this. Normalising it would widen it to
+    float32, divide by 255 and multiply back -- an identity that costs a full
+    float copy of the video, which for a reduced payload is four times its size.
+    The layout heuristics stay in charge of anything else.
+    """
+    return isinstance(video, np.ndarray) and video.dtype == np.uint8 and video.ndim == 4 and video.shape[-1] in (3, 4)
+
+
 def _coerce_video_to_uint8_frames(video: Any) -> np.ndarray:
     """Convert a video payload into contiguous uint8 frames shaped (F, H, W, 3)."""
+    if _already_uint8_frames(video):
+        frames_u8 = video[..., :3] if video.shape[-1] == 4 else video
+        return np.ascontiguousarray(frames_u8)
+
     frames = _coerce_video_to_frames(video)
     if not frames:
         raise ValueError("No frames found to encode.")

@@ -366,3 +366,41 @@ def test_frame_interpolator_uses_platform_device_when_tensor_is_cpu(monkeypatch)
     assert chosen_devices == [torch.device("cuda")]
     assert multiplier == 2
     assert output_video.shape == (1, 3, 3, 32, 32)
+
+
+def test_device_reduced_frames_skip_normalization() -> None:
+    """A uint8 (F, H, W, C) payload must pass straight through.
+
+    Normalising it is an identity -- widen to float32, divide by 255, multiply
+    back -- that costs a full float copy of the video. For a device-reduced
+    payload that copy is four times the payload itself, in the API server, which
+    is exactly the duplication the device-side reduction exists to remove.
+    """
+    frames = np.arange(2 * 4 * 6 * 3, dtype=np.uint8).reshape(2, 4, 6, 3)
+
+    result = video_api_utils._coerce_video_to_uint8_frames(frames)
+
+    assert result.dtype == np.uint8
+    np.testing.assert_array_equal(result, frames)
+
+
+def test_device_reduced_frames_match_the_normalized_path() -> None:
+    """The shortcut must agree with the path it bypasses, or it changes pixels."""
+    frames = np.random.default_rng(0).integers(0, 256, size=(3, 5, 7, 3), dtype=np.uint8)
+
+    shortcut = video_api_utils._coerce_video_to_uint8_frames(frames)
+    # The float payload the normalizing path would have built from the same frames.
+    through_float = video_api_utils._coerce_video_to_uint8_frames(frames.astype(np.float32) / 255.0)
+
+    np.testing.assert_array_equal(shortcut, through_float)
+
+
+def test_device_reduced_rgba_frames_drop_alpha() -> None:
+    frames = np.zeros((2, 3, 3, 4), dtype=np.uint8)
+    frames[..., 0] = 9
+    frames[..., 3] = 255
+
+    result = video_api_utils._coerce_video_to_uint8_frames(frames)
+
+    assert result.shape == (2, 3, 3, 3)
+    assert result[0, 0, 0].tolist() == [9, 0, 0]
