@@ -561,9 +561,8 @@ class LTXRuntime(
 
         if video.numel() > 0:
             if should_enable_device_postprocess(self.od_config, output_type=output_type):
-                # Reduce to uint8 on the GPU before the D2H copy; the engine
-                # post_process packages the tensor as-is, so the uint8 frames
-                # flow straight through (encoder-identical after the /255 round).
+                # post_process packages the tensor as-is, so uint8 frames flow
+                # straight through to the encoder.
                 video = reduce_video_to_uint8_frames(video)
             else:
                 video = self.video_processor.postprocess_video(video, output_type=output_type)

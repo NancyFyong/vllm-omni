@@ -613,35 +613,23 @@ class VideoOutputTransportConfig:
     # through shared memory instead of being pickled through the MessageQueue.
     shm_threshold_bytes: int = 1_000_000
 
-    # When set, pipelines that support it run denormalize/clamp/layout/uint8 on
-    # the device before the D2H copy, so Hop 1 carries uint8 instead of float32.
-    # Opt-in and off by default; requests needing the float tensor (latent
-    # output, frame interpolation, guardrails) fall back to the float path.
+    # Reduce the decoded video to uint8 on the device before the D2H copy.
+    # Requests needing the float tensor fall back to the float path.
     enable_device_postprocess: bool = False
 
-    # How a finished video reaches the client on the HTTP hop.
-    #   "base64": inline b64_json, the OpenAI-compatible default.
-    #   "url":    store the artifact and return a URL, avoiding the ~33% base64
-    #             inflation and keeping the encoded video out of the JSON body.
-    #   "shared_memory": publish raw uint8 frames in shared memory and return a
-    #             handle. Same-host consumers only; skips MP4 encoding and base64
-    #             entirely, so an RL rollout worker reads the frames losslessly
-    #             without a serialised copy.
+    # How a finished video reaches the client: inline b64_json, a stored artifact
+    # URL, or a shared-memory handle to raw frames for same-host consumers.
     transport_mode: str = "base64"
 
     # Container format for encoded video artifacts.
     output_format: str = "mp4"
 
-    # Video encoder for the engine->HTTP hop. None means "whatever the output
-    # format expects" (h264 for mp4, VP9 for webm). A hardware encoder (e.g.
-    # "h264_nvenc") that the host cannot open falls back to the software default,
-    # so this is safe to set across mixed hardware.
+    # ``None`` means whatever the output format expects (h264 for mp4, VP9 for
+    # webm). An encoder the host cannot open falls back to the software default.
     video_codec: str | None = None
 
-    # MP4 encoder options for the engine->HTTP hop, overridable per request via
-    # ``extra_params["video_codec_options"]``. Empty means "use the fast presets
-    # for the selected codec", which is where the ultrafast/zerolatency defaults
-    # come from; encoder families do not accept each other's options.
+    # Empty means the fast presets for whichever codec runs; encoder families do
+    # not accept each other's options. Overridable per request.
     video_codec_options: dict[str, str] = field(default_factory=dict)
 
     VALID_TRANSPORT_MODES: ClassVar[frozenset[str]] = frozenset({"base64", "url", "shared_memory"})
@@ -998,9 +986,8 @@ class OmniDiffusionConfig:
                 "diffusion_compile_granularity must be 'regional' or 'full', "
                 f"got {self.diffusion_compile_granularity!r}"
             )
-        # Accept a mapping (programmatic callers / Omni(**kwargs)) or None and
-        # normalize to a real config, mirroring _DiffusionConfigProjection, so
-        # downstream code can always read attributes off this field.
+        # Normalize a mapping or None so downstream code can read attributes off
+        # this field, mirroring _DiffusionConfigProjection.
         if isinstance(self.video_output_transport, Mapping):
             self.video_output_transport = VideoOutputTransportConfig(**dict(self.video_output_transport))
         elif not isinstance(self.video_output_transport, VideoOutputTransportConfig):

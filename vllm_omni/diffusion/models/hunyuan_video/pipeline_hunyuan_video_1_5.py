@@ -84,9 +84,8 @@ def get_hunyuan_video_15_post_process_func(od_config: OmniDiffusionConfig):
         if output_type == "latent":
             return video
         if is_device_reduced(video):
-            # Already uint8 [B, F, H, W, C] from the device-side reduction; skip
-            # the diffusers denormalize/scale and build PIL the same way the float
-            # path would (Image.fromarray on uint8 matches numpy_to_pil).
+            # Already uint8 from the device-side reduction; Image.fromarray on
+            # uint8 matches the numpy_to_pil the float path would run.
             frames = video.cpu().numpy()
             if output_type == "np":
                 return frames

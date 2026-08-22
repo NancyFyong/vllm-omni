@@ -51,9 +51,8 @@ def media_type_for_format(output_format: str | None) -> str:
     return _format_defaults(output_format)["media_type"]
 
 
-# Fast-preset options per encoder. FFmpeg rejects options that belong to another
-# encoder family (passing NVENC's "preset=p1" to libx264 fails avcodec_open2),
-# so these cannot be shared and must follow whichever codec actually runs.
+# Per encoder: FFmpeg rejects another family's options (NVENC's "preset=p1"
+# fails avcodec_open2 on libx264), so these follow whichever codec runs.
 _FAST_CODEC_OPTIONS: dict[str, dict[str, str]] = {
     "h264": {"preset": "ultrafast", "threads": "0"},
     "libx264": {"preset": "ultrafast", "threads": "0"},

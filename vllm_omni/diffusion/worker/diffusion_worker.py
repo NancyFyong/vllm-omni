@@ -842,9 +842,8 @@ class CustomPipelineWorkerExtension:
 class WorkerProc:
     """Wrapper that runs one Worker in a separate process."""
 
-    # Resolved from od_config.video_output_transport in __init__. Declared here
-    # so partially constructed instances (object.__new__ in tests) still read a
-    # valid value; None means "use the ipc module default threshold".
+    # Declared here so partially constructed instances still read a valid value.
+    # ``None`` means the ipc module default threshold.
     _shm_threshold_bytes: int | None = None
 
     def __init__(
@@ -860,9 +859,8 @@ class WorkerProc:
         self.gpu_id = gpu_id
         self.wake_event = wake_event
 
-        # Byte size above which outputs travel through shared memory instead of
-        # the MessageQueue. ``None`` falls back to the ipc module default, which
-        # also covers stub configs used in tests.
+        # Size above which outputs travel through shared memory instead of the
+        # MessageQueue; ``None`` falls back to the ipc module default.
         transport_config = getattr(od_config, "video_output_transport", None)
         self._shm_threshold_bytes = (
             transport_config.shm_threshold_bytes if isinstance(transport_config, VideoOutputTransportConfig) else None

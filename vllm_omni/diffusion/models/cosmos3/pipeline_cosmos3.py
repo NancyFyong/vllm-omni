@@ -699,9 +699,8 @@ def get_cosmos3_post_process_func(od_config: OmniDiffusionConfig):
                 }
             return processed_image
         if is_device_reduced(video):
-            # Already uint8 [B, F, H, W, C] from the device-side reduction, which the
-            # worker only performs when guardrails are off. Fail closed instead of
-            # silently skipping the safety check if that ever stops holding.
+            # Already uint8 from the device-side reduction, which the worker only
+            # performs when guardrails are off. Fail closed if that stops holding.
             if is_guardrails_enabled(od_config, sampling_params):
                 raise ValueError(
                     "Cosmos3 received a device-reduced uint8 video while guardrails are enabled; "
@@ -3708,9 +3707,8 @@ class Cosmos3OmniDiffusersPipeline(
         if not is_t2i and not action_enabled:
             from .guardrails import is_guardrails_enabled
 
-            # Guardrails block the reduction: the safety check runs on the float
-            # video in post_process, so reducing early would bypass it. Image
-            # (t2i) and action outputs keep the float path via the branch above.
+            # Guardrails block the reduction: check_video_safety runs on the float
+            # video in post_process, so reducing early would bypass it.
             if should_enable_device_postprocess(self.od_config, sp, blocked=is_guardrails_enabled(self.od_config, sp)):
                 video = reduce_video_to_uint8_frames(video)
         if _is_rank_zero():

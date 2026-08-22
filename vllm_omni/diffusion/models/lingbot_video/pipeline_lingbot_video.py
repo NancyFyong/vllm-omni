@@ -561,9 +561,8 @@ class LingBotVideoPipeline(
             decoded = self.vae.decode(vae_latents)
         frames = decoded[0] if isinstance(decoded, tuple) else decoded.sample
         if reduce_to_uint8:
-            # Reduce on the GPU before the D2H copy. LingBot denormalizes as
-            # clamp(-1,1) then (x+1)/2, matching reduce_video_to_uint8_frames'
-            # (x*0.5+0.5).clamp(0,1).
+            # LingBot denormalizes as clamp(-1,1) then (x+1)/2, which matches
+            # reduce_video_to_uint8_frames' (x*0.5+0.5).clamp(0,1).
             frames = reduce_video_to_uint8_frames(frames)
             return frames[0].cpu()
         frames = frames.float().clamp_(-1, 1)

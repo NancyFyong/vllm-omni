@@ -39,12 +39,9 @@ def _encoder_frames(video_payload: np.ndarray) -> list[np.ndarray]:
 def test_wan_device_reduction_matches_float32_reference_and_bounds_the_float_path() -> None:
     """Reduced frames equal a float32 reference exactly, and the float path within 1.
 
-    The device reduction computes in float32. WAN's engine postprocess denormalizes
-    in the VAE's own dtype, so for a bf16 decode the two paths land on a different
-    255th wherever the bf16 denormalize rounds differently -- about 20% of pixels on
-    a real 480x832x81 generation, always by exactly one. The device path is the more
-    precise of the two, which is what the exact assertion below pins; the bound on
-    the native-dtype path is what a deployment actually sees when the flag flips.
+    The reduction computes in float32 while WAN's postprocess denormalizes in the
+    VAE's own dtype, so a bf16 decode differs by one 255th on ~20% of pixels with
+    the reduction being the more precise side. Measured on 480x832x81.
     """
     torch.manual_seed(0)
     # Synthetic VAE decode output: [B, C, F, H, W] bf16 in ~[-1, 1]. Values are

@@ -60,14 +60,12 @@ def test_device_reduction_matches_a_float32_reference(dtype: torch.dtype) -> Non
 @requires_gpu
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 def test_device_reduction_deviates_from_a_narrow_postprocess_by_at_most_one(dtype: torch.dtype) -> None:
-    """Pin the real cost of computing in float32: at most one 255th, and only up.
+    """Pin the cost of computing in float32: at most one 255th.
 
-    A pipeline whose postprocess denormalizes in the VAE's own dtype (WAN,
-    HunyuanVideo, LTX-2 and Cosmos3 all do) does not agree with this reduction
-    bit for bit. Measured on a real 480x832x81 WAN generation, ~20% of pixels
-    differ, always by exactly one, because the reduction is the more precise of
-    the two. This test exists so that difference stays a documented bound rather
-    than a surprise, and so a regression that widens it fails here.
+    A postprocess that denormalizes in the VAE's own dtype (WAN, HunyuanVideo,
+    LTX-2, Cosmos3) does not match this reduction bit for bit; ~20% of pixels
+    differ by one on a real 480x832x81 WAN generation. Keep that a bound rather
+    than a surprise, so a regression widening it fails here.
     """
     torch.manual_seed(0)
     video = (torch.rand(1, 3, 8, 64, 96, device=_device()) * 2.4 - 1.2).to(dtype)

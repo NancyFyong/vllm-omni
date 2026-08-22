@@ -37,10 +37,9 @@ from vllm_omni.diffusion.data import DiffusionOutput
 _SHM_TENSOR_THRESHOLD = 1_000_000  # 1 MB
 DIFFUSION_RPC_RESULT_ENVELOPE = "diffusion_rpc_result"
 
-# Segments currently borrowed zero-copy by this process, keyed by segment name.
-# Borrowed arrays point straight at ``shm.buf``, so the SharedMemory object has
-# to outlive them: dropping the last reference unmaps the buffer and would
-# leave dangling tensors. Entries are removed by ``release_borrowed_segments``.
+# Segments borrowed zero-copy by this process, keyed by name. Borrowed arrays
+# point at ``shm.buf``, so the SharedMemory object must outlive them: dropping
+# the last reference unmaps the buffer and leaves dangling tensors.
 _BORROWED_SEGMENTS: dict[str, Any] = {}
 _BORROWED_SEGMENTS_LOCK = threading.Lock()
 

@@ -200,7 +200,7 @@ def test_numpy_payloads_are_borrowed_without_copying() -> None:
 
 
 def test_configured_threshold_packs_tensors_the_default_would_keep_inline() -> None:
-    """Workstream 4: the threshold is deployment configuration, not a constant."""
+    """The threshold is deployment configuration, not a constant."""
     config = VideoOutputTransportConfig(shm_threshold_bytes=_SMALL_THRESHOLD)
     # Comfortably below the module default, comfortably above the configured one.
     tensor = torch.arange(_SMALL_THRESHOLD, dtype=torch.float32)

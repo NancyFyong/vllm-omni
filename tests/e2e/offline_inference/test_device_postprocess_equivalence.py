@@ -2,23 +2,13 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """End-to-end check that reducing a video on the device keeps the pixels equivalent.
 
-The per-model unit tests compare the device reduction against each pipeline's own
-postprocessor on a captured tensor. This runs the whole engine twice with the same
-seed instead, once on the float path and once on the reduced path, and compares the
-frames a client would receive.
-
-The reduction computes in float32. A pipeline whose postprocess denormalizes in the
-VAE's own dtype (WAN, HunyuanVideo, LTX-2 and Cosmos3) therefore lands on a
-different 255th for some pixels, always by exactly one, with the reduction being the
-more precise of the two. Pipelines that cast to float32 themselves (LingBot,
-MiniMax-H3) match exactly. Measured: 0 of 3342336 values differ on
-lingbot-video-dense-1.3b at 17x256x256, and 19308233 of 97044480 (20%) differ by one
-on Wan2.2-TI2V-5B at 81x480x832.
-
-That is why this asserts a bound rather than byte equality. Exactness of the rounding
-itself is pinned by tests/diffusion/test_device_reduction.py, which compares against a
-float32 reference; the bound on differing pixels below is what keeps a rounding
-regression from hiding here, since dropping the round moves about half the pixels.
+Runs the whole engine twice with the same seed, once per flag state, and compares the
+frames a client would receive. The reduction computes in float32, so a pipeline that
+denormalizes in the VAE's own dtype (WAN, HunyuanVideo, LTX-2, Cosmos3) differs by one
+255th on some pixels while LingBot and MiniMax-H3 match exactly -- measured 0 of
+3342336 values on LingBot at 17x256x256 and 20% of 97044480 on Wan2.2-TI2V-5B at
+81x480x832. Hence a bound rather than byte equality; rounding exactness is pinned by
+tests/diffusion/test_device_reduction.py.
 
 Point it at any of the six supported video pipelines::
 

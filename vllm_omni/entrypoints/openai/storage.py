@@ -82,9 +82,8 @@ class LocalStorageManager(StorageBaseManager[FileStorageHandle | UrlStorageHandl
         self.storage_path = os.path.realpath(storage_path)
         os.makedirs(self.storage_path, exist_ok=True)
 
-        # Set when the storage directory is already published by something else
-        # (a static server or CDN in front of a shared filesystem), which lets us
-        # hand clients a URL instead of streaming bytes through this process.
+        # Set when a static server or CDN already publishes the storage
+        # directory, so clients get a URL instead of bytes through this process.
         self.public_base_url = public_base_url.rstrip("/") if public_base_url else None
 
         self._io_semaphore = asyncio.Semaphore(max(1, max_concurrency))

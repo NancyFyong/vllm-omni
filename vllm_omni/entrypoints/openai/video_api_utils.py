@@ -493,9 +493,8 @@ def _coerce_audio_to_numpy(audio: Any) -> np.ndarray:
 def _already_uint8_frames(video: Any) -> bool:
     """Whether a payload is already the (F, H, W, C) uint8 frames we want.
 
-    A device-reduced video arrives like this. Normalising it would widen it to
-    float32, divide by 255 and multiply back -- an identity that costs a full
-    float copy of the video, which for a reduced payload is four times its size.
+    Normalising a device-reduced video widens it to float32, divides by 255 and
+    multiplies back: an identity costing a full float copy four times its size.
     The layout heuristics stay in charge of anything else.
     """
     return isinstance(video, np.ndarray) and video.dtype == np.uint8 and video.ndim == 4 and video.shape[-1] in (3, 4)
@@ -580,9 +579,8 @@ def resolve_video_encoder_settings(
     try:
         od_config = resolve_diffusion_od_config(engine_client) or getattr(engine_client, "od_config", None)
     except Exception:
-        # Encoder policy is best-effort: some engine wrappers raise while
-        # resolving the diffusion config, and that must not fail the request when
-        # the built-in defaults would encode it fine.
+        # Best-effort: some engine wrappers raise while resolving the config, and
+        # that must not fail a request the defaults would encode fine.
         logger.debug("Could not resolve the diffusion config for encoder settings.", exc_info=True)
         od_config = None
     transport = getattr(od_config, "video_output_transport", None) if od_config is not None else None

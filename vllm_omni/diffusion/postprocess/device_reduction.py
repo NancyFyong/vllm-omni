@@ -36,21 +36,15 @@ def should_enable_device_postprocess(
 ) -> bool:
     """Whether a decoded video may be reduced to uint8 before the D2H copy.
 
-    One gate shared by every video pipeline, so the conditions that make the
-    reduction safe are defined once instead of per model. It is deliberately
-    conservative: anything unrecognised keeps the float path.
+    Shared by every video pipeline and deliberately conservative: anything
+    unrecognised keeps the float path. ``sampling_params`` may be one request or
+    the whole batch, since a single request needing float closes the gate.
 
     Args:
-        od_config: Config carrying ``video_output_transport``.
-        sampling_params: One request's sampling params, the whole batch, or
-            ``None`` when the pipeline has no per-request output type. Reduction
-            is batch-wide, so a single request needing float closes the gate.
-        output_type: Pipeline-level output type. Omit it for pipelines that
-            postprocess to a fixed format regardless of the request; passing
-            ``None`` explicitly keeps the float path, as ``None`` is not ``"np"``.
-        blocked: Model-specific veto, evaluated by the caller because the reason
-            is model-specific (Cosmos3 guardrails must see the float video,
-            LingBot text-to-image has no video path).
+        output_type: Omit for pipelines that postprocess to a fixed format
+            regardless of the request; passing ``None`` keeps the float path.
+        blocked: Model-specific veto, evaluated by the caller (Cosmos3 guardrails
+            must see the float video, LingBot text-to-image has no video path).
     """
     if blocked:
         return False
