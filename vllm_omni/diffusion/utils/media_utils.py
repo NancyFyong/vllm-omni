@@ -85,7 +85,11 @@ def _encoder_is_usable(codec: str) -> bool:
         ctx = av.codec.CodecContext.create(codec, "w")
         ctx.width, ctx.height, ctx.pix_fmt = 64, 64, "yuv420p"
         ctx.open()
-    except Exception:
+    except Exception as exc:
+        # Any failure means unusable: PyAV raises PermissionError for a missing
+        # NVENC engine, UnknownCodecError for a name this build lacks, and
+        # ArgumentError for an unsupported pixel format.
+        logger.debug("Encoder %s is not usable on this host: %s", codec, exc)
         return False
     return True
 

@@ -19,6 +19,7 @@ import torch
 
 from vllm_omni.diffusion.models.cosmos3.pipeline_cosmos3 import get_cosmos3_post_process_func
 from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
+from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.gpu]
 
@@ -28,7 +29,7 @@ requires_gpu = pytest.mark.skipif(not _GPU, reason="device reduction is a GPU pa
 # Server-level guardrail gate off -> is_guardrails_enabled() is False, matching
 # the only state in which the worker reduces the video on device.
 _OD_CONFIG = SimpleNamespace(model_config={"guardrails": False})
-_SAMPLING = SimpleNamespace(extra_args={}, output_type="np")
+_SAMPLING = OmniDiffusionSamplingParams(extra_args={}, output_type="np")
 
 
 def test_cosmos3_post_process_passes_uint8_video_through() -> None:

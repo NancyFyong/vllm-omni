@@ -23,6 +23,7 @@ import torch
 from vllm_omni.diffusion.models.wan2_2.pipeline_wan2_2 import get_wan22_post_process_func
 from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
 from vllm_omni.entrypoints.openai.video_api_utils import _coerce_video_to_uint8_frames
+from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.gpu]
 
@@ -49,7 +50,7 @@ def test_wan_device_reduction_matches_float32_reference_and_bounds_the_float_pat
     vae_out = torch.rand(2, 3, 8, 64, 96, device="cuda:0", dtype=torch.bfloat16) * 2.4 - 1.2
 
     post_process = get_wan22_post_process_func(SimpleNamespace())
-    sampling = SimpleNamespace(output_type=None, enable_frame_interpolation=False)
+    sampling = OmniDiffusionSamplingParams(output_type=None, enable_frame_interpolation=False)
 
     # Reference computed in float32, which is the precision the device path uses.
     widened_out = post_process(vae_out.float(), output_type="np", sampling_params=sampling)
@@ -79,7 +80,7 @@ def test_wan_post_process_passthrough_keeps_uint8_without_rescaling() -> None:
     frames = torch.randint(0, 256, (1, 4, 16, 16, 3), dtype=torch.uint8, device="cuda:0")
 
     out = get_wan22_post_process_func(SimpleNamespace())(
-        frames, output_type="np", sampling_params=SimpleNamespace(output_type=None)
+        frames, output_type="np", sampling_params=OmniDiffusionSamplingParams(output_type=None)
     )
 
     np.testing.assert_array_equal(out["payload"]["video"], frames.cpu().numpy())
@@ -91,7 +92,7 @@ def test_wan_post_process_still_denormalizes_float_input() -> None:
     video = torch.rand(1, 3, 4, 16, 16, device="cuda:0", dtype=torch.float32) * 2 - 1
 
     out = get_wan22_post_process_func(SimpleNamespace())(
-        video, output_type="np", sampling_params=SimpleNamespace(output_type=None)
+        video, output_type="np", sampling_params=OmniDiffusionSamplingParams(output_type=None)
     )
 
     payload = out["payload"]["video"]

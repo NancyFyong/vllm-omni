@@ -20,6 +20,7 @@ import torch
 
 from vllm_omni.diffusion.models.lingbot_video.pipeline_lingbot_video import get_lingbot_video_post_process_func
 from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
+from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.gpu]
 
@@ -32,7 +33,7 @@ def test_lingbot_post_process_passes_uint8_video_through() -> None:
     post_process = get_lingbot_video_post_process_func(SimpleNamespace())
     video = torch.randint(0, 256, (8, 16, 16, 3), dtype=torch.uint8)  # [F, H, W, C]
 
-    result = post_process({"video": video}, sampling_params=SimpleNamespace(output_type="np"))
+    result = post_process({"video": video}, sampling_params=OmniDiffusionSamplingParams(output_type="np"))
 
     assert result["video"].dtype == np.uint8
     np.testing.assert_array_equal(result["video"], video.numpy())

@@ -21,6 +21,7 @@ import pytest
 
 from vllm_omni.diffusion.data import VideoOutputTransportConfig
 from vllm_omni.diffusion.postprocess.device_reduction import should_enable_device_postprocess
+from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
@@ -89,7 +90,7 @@ def _od(flag: bool | None):
 
 
 def _sp(output_type, interpolation=False):
-    return SimpleNamespace(output_type=output_type, enable_frame_interpolation=interpolation)
+    return OmniDiffusionSamplingParams(output_type=output_type, enable_frame_interpolation=interpolation)
 
 
 # MiniMax-H3 and Cosmos3 never look at enable_frame_interpolation: only the

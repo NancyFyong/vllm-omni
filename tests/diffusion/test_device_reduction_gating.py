@@ -25,6 +25,7 @@ from vllm_omni.diffusion.postprocess.device_reduction import (
 from vllm_omni.diffusion.postprocess.device_reduction import (
     should_enable_device_postprocess as _should_enable_device_postprocess,
 )
+from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
@@ -34,7 +35,7 @@ def _od_config(*, reduce: bool) -> SimpleNamespace:
 
 
 def _sp(output_type: str | None = None, *, interpolate: bool = False) -> SimpleNamespace:
-    return SimpleNamespace(output_type=output_type, enable_frame_interpolation=interpolate)
+    return OmniDiffusionSamplingParams(output_type=output_type, enable_frame_interpolation=interpolate)
 
 
 # --- the shared gate, exercised through each pipeline's call shape ----------
@@ -149,7 +150,7 @@ def test_cosmos3_post_process_refuses_uint8_when_guardrails_are_enabled() -> Non
     video = torch.randint(0, 256, (1, 2, 8, 8, 3), dtype=torch.uint8)
 
     with pytest.raises(ValueError, match="guardrails are enabled"):
-        post_process({"video": video}, output_type="np", sampling_params=SimpleNamespace(extra_args={}))
+        post_process({"video": video}, output_type="np", sampling_params=OmniDiffusionSamplingParams(extra_args={}))
 
 
 def test_cosmos3_post_process_accepts_uint8_when_guardrails_are_disabled() -> None:
@@ -157,7 +158,9 @@ def test_cosmos3_post_process_accepts_uint8_when_guardrails_are_disabled() -> No
     post_process = get_cosmos3_post_process_func(SimpleNamespace(model_config={"guardrails": False}))
     video = torch.randint(0, 256, (1, 2, 8, 8, 3), dtype=torch.uint8)
 
-    result = post_process({"video": video}, output_type="np", sampling_params=SimpleNamespace(extra_args={}))
+    result = post_process(
+        {"video": video}, output_type="np", sampling_params=OmniDiffusionSamplingParams(extra_args={})
+    )
 
     assert result.dtype.name == "uint8"
     assert result.shape == (1, 2, 8, 8, 3)

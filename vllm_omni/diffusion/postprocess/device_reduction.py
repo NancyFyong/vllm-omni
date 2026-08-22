@@ -66,7 +66,7 @@ def should_enable_device_postprocess(
     return True
 
 
-def is_device_reduced(video: Any) -> bool:
+def is_device_reduced(video: object) -> bool:
     """Whether ``video`` is already uint8 frames from the device-side reduction.
 
     Used by each ``post_process`` to skip the float denormalize path.

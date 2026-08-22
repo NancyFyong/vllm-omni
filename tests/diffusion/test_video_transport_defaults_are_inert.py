@@ -14,12 +14,11 @@ covers the config defaults and the gate.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from vllm_omni.diffusion.data import OmniDiffusionConfig, VideoOutputTransportConfig
 from vllm_omni.diffusion.postprocess.device_reduction import should_enable_device_postprocess
+from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
 
@@ -47,7 +46,7 @@ def test_a_default_diffusion_config_carries_a_default_transport() -> None:
 
 
 def _sp(output_type="np", interpolation=False):
-    return SimpleNamespace(output_type=output_type, enable_frame_interpolation=interpolation)
+    return OmniDiffusionSamplingParams(output_type=output_type, enable_frame_interpolation=interpolation)
 
 
 def test_no_pipeline_reduces_under_a_default_config() -> None:

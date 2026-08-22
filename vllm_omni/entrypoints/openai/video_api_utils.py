@@ -490,7 +490,7 @@ def _coerce_audio_to_numpy(audio: Any) -> np.ndarray:
     return arr.astype(np.float32)
 
 
-def _already_uint8_frames(video: Any) -> bool:
+def _already_uint8_frames(video: object) -> bool:
     """Whether a payload is already the (F, H, W, C) uint8 frames we want.
 
     Normalising a device-reduced video widens it to float32, divides by 255 and
