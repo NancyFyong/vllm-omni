@@ -49,10 +49,21 @@ data.
 Supported: WAN 2.2, HunyuanVideo 1.5, LTX-2, MiniMax-H3, Cosmos3,
 LingBot-Video.
 
-Measured on Wan2.2-TI2V-5B at 480x832x81 frames: the hop carries 92.5 MiB
-instead of 370.2 MiB, the consuming process peaks 577 MiB lower, and MP4
-encoding drops from 561 ms to 387 ms. Generation time is unchanged -- denoising
-dominates it -- so this saves memory and bandwidth, not wall clock.
+Measured over two fresh-process rounds on Wan2.2-TI2V-5B at
+480x832x81 frames with diffusers 0.40.0: the returned transport payload is
+92.5 MiB instead of 370.2 MiB, caller-process peak RSS drops from 2240.1 MiB
+(range 2227.6–2252.7) to 1631.6 MiB (1615.7–1647.4), and MP4 encoding averages
+469.9 ms versus 423.1 ms. Generation averages 66.1 s versus 65.2 s, so the
+primary benefit is host memory and bandwidth rather than generation speed.
+
+With four videos in one engine batch, their combined payload drops from
+1480.8 MiB to 370.2 MiB and caller-process peak RSS drops from 3384.7 MiB to
+1932.7 MiB. A separate `/v1/videos/sync` run with 1, 2, and 4 concurrent HTTP
+clients saved 596.2, 916.8, and 918.0 MiB of aggregate process-tree RSS. Request
+wall time scaled approximately 1x/2x/4x, showing that this endpoint serializes
+generation; the HTTP result therefore saturates rather than scaling linearly
+with client count. See `bench_device_postprocess.py` and
+`bench_video_transport_concurrency.py` under `benchmarks/diffusion/`.
 
 ### Pixel differences
 

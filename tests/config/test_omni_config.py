@@ -1133,24 +1133,14 @@ def test_video_output_transport_is_bridged_to_omni_diffusion_config():
     assert "video_output_transport" in projection_fields & diffusion_fields
 
 
-def test_video_output_transport_cli_json_string_is_wired():
-    """CLI wiring: the flag exists on OrchestratorArgs and a JSON string coerces.
-
-    The CLI passes nested configs as JSON strings (like cache_config);
-    async_omni_engine ``json.loads`` the string, then OmniDiffusionConfig must
-    coerce the resulting dict into a real VideoOutputTransportConfig. Without
-    the OrchestratorArgs field the ``--video-output-transport`` flag would not
-    exist, and without the coercion the parsed dict would be a silent no-op.
-    """
-    import json
-
+def test_omni_diffusion_config_normalizes_video_output_transport_mapping():
+    """The programmatic API accepts the same mapping that the CLI produces."""
     from vllm_omni.diffusion.data import OmniDiffusionConfig, VideoOutputTransportConfig
-    from vllm_omni.engine.arg_utils import OrchestratorArgs
 
-    assert "video_output_transport" in {f.name for f in fields(OrchestratorArgs)}
-
-    parsed = json.loads('{"enable_device_postprocess": true, "shm_threshold_bytes": 4096}')
-    cfg = OmniDiffusionConfig(model="x", video_output_transport=parsed)
+    cfg = OmniDiffusionConfig(
+        model="x",
+        video_output_transport={"enable_device_postprocess": True, "shm_threshold_bytes": 4096},
+    )
     assert isinstance(cfg.video_output_transport, VideoOutputTransportConfig)
     assert cfg.video_output_transport.enable_device_postprocess is True
     assert cfg.video_output_transport.shm_threshold_bytes == 4096

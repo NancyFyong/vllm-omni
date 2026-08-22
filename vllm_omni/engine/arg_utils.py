@@ -540,7 +540,7 @@ class OrchestratorArgs:
     diffusion_compile_dynamic: bool | None = None
     cache_backend: str = "none"
     cache_config: str | None = None
-    video_output_transport: str | None = None
+    video_output_transport: dict[str, Any] | str | None = None
     enable_cache_dit_summary: bool = False
     step_execution: bool = False
     vae_use_slicing: bool = False

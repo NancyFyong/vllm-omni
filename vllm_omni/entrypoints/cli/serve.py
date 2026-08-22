@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+
 """
 Omni serve command for vLLM-Omni.
 
@@ -52,6 +55,16 @@ def _nonneg_finite_float(value: str) -> float:
         raise argparse.ArgumentTypeError(f"invalid float value: {value!r}") from exc
     if not math.isfinite(parsed) or parsed < 0:
         raise argparse.ArgumentTypeError(f"must be a finite non-negative number, got {value!r}")
+    return parsed
+
+
+def _json_object(value: str) -> dict[str, object]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError(f"must be valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise argparse.ArgumentTypeError("must be a JSON object")
     return parsed
 
 
@@ -637,6 +650,15 @@ class OmniServeCommand(CLISubcommand):
             "TeaCache: '{\"rel_l1_thresh\": 0.2}'. "
             'MagCache: \'{"mag_threshold": 0.24, "mag_max_skip_steps": 5, "mag_retention_ratio": 0.1}\'. '
             "Calibration mode: add '\"mag_calibrate\": true'",
+        )
+        omni_config_group.add_argument(
+            "--video-output-transport",
+            type=_json_object,
+            default=None,
+            help="JSON string of video output transport configuration. "
+            "Device-side postprocessing: '{\"enable_device_postprocess\": true}'. "
+            'Delivery: \'{"transport_mode": "url"}\' or \'{"transport_mode": "shared_memory"}\'. '
+            'Encoding: \'{"output_format": "webm", "video_codec": "libvpx-vp9"}\'.',
         )
         omni_config_group.add_argument(
             "--enable-cache-dit-summary",
