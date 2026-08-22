@@ -1145,3 +1145,22 @@ def test_diffusion_config_projection_keeps_mapping_quantization_config_serializa
     cfg = omni_config_module._DiffusionConfigProjection.from_kwargs(quantization_config=quantization_config)
 
     assert cfg.quantization_config == quantization_config
+
+
+def test_video_output_transport_survives_stage_override_filtering() -> None:
+    """The transport config must reach a stage, not be filtered as orchestrator-owned.
+
+    ``video_output_transport`` is declared on ``OrchestratorArgs`` so the CLI can
+    parse ``--video-output-transport``. That alone makes
+    ``build_stage_runtime_overrides`` treat it as orchestrator-owned and drop it,
+    which silently disables device-side postprocessing for every registered
+    pipeline driven through the Python API. Declaring it on the deploy schema is
+    what exempts it, exactly as ``cache_config`` is exempted.
+    """
+    from vllm_omni.config.stage_config import build_stage_runtime_overrides, deploy_runtime_override_keys
+
+    assert "video_output_transport" in deploy_runtime_override_keys()
+
+    overrides = build_stage_runtime_overrides(0, {"video_output_transport": {"enable_device_postprocess": True}})
+
+    assert overrides["video_output_transport"] == {"enable_device_postprocess": True}

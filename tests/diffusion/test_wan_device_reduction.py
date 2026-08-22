@@ -36,8 +36,16 @@ def _encoder_frames(video_payload: np.ndarray) -> list[np.ndarray]:
 
 
 @requires_gpu
-def test_wan_device_reduction_matches_float_path_at_encoder_input() -> None:
-    """flag-on frames must equal flag-off frames, byte for byte, at the encoder."""
+def test_wan_device_reduction_matches_float32_reference_and_bounds_the_float_path() -> None:
+    """Reduced frames equal a float32 reference exactly, and the float path within 1.
+
+    The device reduction computes in float32. WAN's engine postprocess denormalizes
+    in the VAE's own dtype, so for a bf16 decode the two paths land on a different
+    255th wherever the bf16 denormalize rounds differently -- about 20% of pixels on
+    a real 480x832x81 generation, always by exactly one. The device path is the more
+    precise of the two, which is what the exact assertion below pins; the bound on
+    the native-dtype path is what a deployment actually sees when the flag flips.
+    """
     torch.manual_seed(0)
     # Synthetic VAE decode output: [B, C, F, H, W] bf16 in ~[-1, 1]. Values are
     # pushed slightly outside [-1, 1] so the clamp is exercised on both paths.
@@ -46,10 +54,13 @@ def test_wan_device_reduction_matches_float_path_at_encoder_input() -> None:
     post_process = get_wan22_post_process_func(SimpleNamespace())
     sampling = SimpleNamespace(output_type=None, enable_frame_interpolation=False)
 
-    # Float path (flag off). Production widens bf16->f32 over SHM before the
-    # engine postprocess, so widen here too for an honest comparison.
-    float_out = post_process(vae_out.float(), output_type="np", sampling_params=sampling)
-    float_frames = _encoder_frames(float_out["payload"]["video"])
+    # Reference computed in float32, which is the precision the device path uses.
+    widened_out = post_process(vae_out.float(), output_type="np", sampling_params=sampling)
+    widened_frames = _encoder_frames(widened_out["payload"]["video"])
+
+    # The float path production runs: the engine denormalizes the bf16 decode.
+    native_out = post_process(vae_out, output_type="np", sampling_params=sampling)
+    native_frames = _encoder_frames(native_out["payload"]["video"])
 
     # Device-reduced path (flag on): reduce in "forward", pass through in post.
     reduced = reduce_video_to_uint8_frames(vae_out)
@@ -57,10 +68,12 @@ def test_wan_device_reduction_matches_float_path_at_encoder_input() -> None:
     assert reduced_out["payload"]["video"].dtype == np.uint8
     reduced_frames = _encoder_frames(reduced_out["payload"]["video"])
 
-    assert len(float_frames) == len(reduced_frames) == 2
-    for expected, produced in zip(float_frames, reduced_frames, strict=True):
+    assert len(widened_frames) == len(reduced_frames) == 2
+    for expected, native, produced in zip(widened_frames, native_frames, reduced_frames, strict=True):
         assert produced.shape == expected.shape == (8, 64, 96, 3)
         np.testing.assert_array_equal(produced, expected)
+        deviation = np.abs(produced.astype(np.int16) - native.astype(np.int16))
+        assert deviation.max() <= 1
 
 
 @requires_gpu

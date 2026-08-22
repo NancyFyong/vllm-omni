@@ -44,10 +44,29 @@ vllm-omni serve <model> \
 
 With `enable_device_postprocess: True`, supported pipelines convert the decoded
 video to uint8 frames on the GPU, so the worker→engine copy carries 4x less
-data. Output is bit-for-bit identical to the CPU path.
+data.
 
 Supported: WAN 2.2, HunyuanVideo 1.5, LTX-2, MiniMax-H3, Cosmos3,
 LingBot-Video.
+
+Measured on Wan2.2-TI2V-5B at 480x832x81 frames: the hop carries 92.5 MiB
+instead of 370.2 MiB, the consuming process peaks 577 MiB lower, and MP4
+encoding drops from 561 ms to 387 ms. Generation time is unchanged -- denoising
+dominates it -- so this saves memory and bandwidth, not wall clock.
+
+### Pixel differences
+
+The reduction computes in float32. A pipeline whose postprocess denormalizes in
+the VAE's own dtype (WAN 2.2, HunyuanVideo 1.5, LTX-2, Cosmos3) therefore
+disagrees with it on some pixels by exactly one 255th, with the device path being
+the more precise of the two. Measured on Wan2.2-TI2V-5B at 480x832x81: 20% of
+values differ by one, none by more. Pipelines that cast to float32 themselves
+(MiniMax-H3, LingBot-Video) are byte-identical -- measured 0 of 3342336 values on
+LingBot at 256x256x17.
+
+The difference is invisible at 8-bit output and does not accumulate, but it is a
+real change, so treat the flag as a pixel-affecting option for those four
+pipelines rather than a pure performance switch.
 
 The reduction is skipped, falling back to the float path, when any of these
 hold:

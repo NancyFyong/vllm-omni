@@ -52,13 +52,19 @@ def test_cosmos3_device_reduction_matches_float_path() -> None:
     # Cosmos3 VAE decode: [B, C, F, H, W] bf16 slightly outside [-1, 1].
     raw = torch.rand(1, 3, 5, 48, 64, device="cuda:0", dtype=torch.bfloat16) * 2.4 - 1.2
 
-    float_np = post_process({"video": raw.float()}, output_type="np", sampling_params=_SAMPLING)
+    # The device path computes in float32 and must match a float32 reference exactly.
+    # Cosmos3's postprocess denormalizes the bf16 decode in its own dtype, so that
+    # path is only bounded by one 255th.
+    widened_np = post_process({"video": raw.float()}, output_type="np", sampling_params=_SAMPLING)
+    native_np = post_process({"video": raw}, output_type="np", sampling_params=_SAMPLING)
     reduced = reduce_video_to_uint8_frames(raw)
     assert reduced.dtype == torch.uint8
     reduced_np = post_process({"video": reduced}, output_type="np", sampling_params=_SAMPLING)
     assert reduced_np.dtype == np.uint8
 
-    for i in range(float_np.shape[0]):
-        expected = _coerce_video_to_uint8_frames(float_np[i])
+    for i in range(widened_np.shape[0]):
+        expected = _coerce_video_to_uint8_frames(widened_np[i])
         produced = _coerce_video_to_uint8_frames(reduced_np[i])
         np.testing.assert_array_equal(produced, expected)
+        native = _coerce_video_to_uint8_frames(native_np[i])
+        assert np.abs(produced.astype(np.int16) - native.astype(np.int16)).max() <= 1

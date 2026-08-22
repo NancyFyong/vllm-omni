@@ -55,13 +55,19 @@ def test_ltx2_device_reduction_matches_float_path() -> None:
     # Raw LTX VAE decode: [B, C, F, H, W] bf16 slightly outside [-1, 1].
     raw = torch.rand(1, 3, 5, 48, 64, device="cuda:0", dtype=torch.bfloat16) * 2.4 - 1.2
 
-    # Float path mirrors ltx2_runtime: postprocess_video(raw, "np").
-    float_np = VideoProcessor(vae_scale_factor=32).postprocess_video(raw.float(), output_type="np")
+    # Float path mirrors ltx2_runtime: postprocess_video(raw, "np"). The device path
+    # computes in float32 and must match a float32 reference exactly; the runtime
+    # denormalizes the bf16 decode in its own dtype, which is only bounded by one.
+    processor = VideoProcessor(vae_scale_factor=32)
+    widened_np = processor.postprocess_video(raw.float(), output_type="np")
+    native_np = processor.postprocess_video(raw, output_type="np")
     reduced = reduce_video_to_uint8_frames(raw)
     assert reduced.dtype == torch.uint8
 
     reduced_np = reduced.cpu().numpy()
-    for i in range(float_np.shape[0]):
-        expected = _coerce_video_to_uint8_frames(float_np[i])
+    for i in range(widened_np.shape[0]):
+        expected = _coerce_video_to_uint8_frames(widened_np[i])
         produced = _coerce_video_to_uint8_frames(reduced_np[i])
         np.testing.assert_array_equal(produced, expected)
+        native = _coerce_video_to_uint8_frames(native_np[i])
+        assert np.abs(produced.astype(np.int16) - native.astype(np.int16)).max() <= 1

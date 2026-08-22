@@ -1,18 +1,29 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""End-to-end proof that reducing a video on the device changes no pixels.
+"""End-to-end check that reducing a video on the device keeps the pixels equivalent.
 
 The per-model unit tests compare the device reduction against each pipeline's own
 postprocessor on a captured tensor. This runs the whole engine twice with the same
-seed instead, once on the float path and once on the reduced path, and requires
-the frames a client would receive to be byte-identical.
+seed instead, once on the float path and once on the reduced path, and compares the
+frames a client would receive.
+
+The reduction computes in float32. A pipeline whose postprocess denormalizes in the
+VAE's own dtype (WAN, HunyuanVideo, LTX-2 and Cosmos3) therefore lands on a
+different 255th for some pixels, always by exactly one, with the reduction being the
+more precise of the two. Pipelines that cast to float32 themselves (LingBot,
+MiniMax-H3) match exactly. Measured: 0 of 3342336 values differ on
+lingbot-video-dense-1.3b at 17x256x256, and 19308233 of 97044480 (20%) differ by one
+on Wan2.2-TI2V-5B at 81x480x832.
+
+That is why this asserts a bound rather than byte equality. Exactness of the rounding
+itself is pinned by tests/diffusion/test_device_reduction.py, which compares against a
+float32 reference; the bound on differing pixels below is what keeps a rounding
+regression from hiding here, since dropping the round moves about half the pixels.
 
 Point it at any of the six supported video pipelines::
 
     VLLM_OMNI_DEVICE_POSTPROCESS_MODEL=robbyant/lingbot-video-dense-1.3b \
         pytest -s tests/e2e/offline_inference/test_device_postprocess_equivalence.py
-
-Measured on lingbot-video-dense-1.3b at 17x256x256: 0 of 3342336 values differ.
 """
 
 from __future__ import annotations
@@ -81,8 +92,12 @@ def _as_uint8_frames(video: np.ndarray) -> np.ndarray:
     return np.rint(np.clip(video, 0.0, 1.0) * 255.0).astype(np.uint8)
 
 
+# A dtype difference moves ~20% of pixels by one; dropping the round moves ~50%.
+_MAX_DIFFERING_FRACTION = 0.35
+
+
 @hardware_test(res={"cuda": "H100"}, num_cards=1)
-def test_device_postprocess_produces_identical_frames() -> None:
+def test_device_postprocess_produces_equivalent_frames() -> None:
     float_path = _generate(False)
     device_path = _generate(True)
 
@@ -96,4 +111,11 @@ def test_device_postprocess_produces_identical_frames() -> None:
     assert float_path.shape == device_path.shape
 
     expected = _as_uint8_frames(float_path)
-    np.testing.assert_array_equal(device_path, expected)
+    deviation = np.abs(device_path.astype(np.int16) - expected.astype(np.int16))
+    differing = float((deviation > 0).mean())
+    print(f"maxdiff={deviation.max()} differing={differing:.4f} ({int((deviation > 0).sum())}/{deviation.size})")
+
+    assert deviation.max() <= 1, "the reduction moved a pixel by more than one 255th"
+    assert differing < _MAX_DIFFERING_FRACTION, (
+        f"{differing:.1%} of pixels differ, more than a denormalize-precision difference explains"
+    )

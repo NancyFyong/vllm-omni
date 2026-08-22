@@ -25,17 +25,17 @@ def _device() -> str:
     return "cuda:0"
 
 
-def _reference_uint8(video: torch.Tensor) -> np.ndarray:
-    """The exact current production output for the same input.
+def _reference_uint8(video: torch.Tensor, *, compute_dtype: torch.dtype | None = torch.float32) -> np.ndarray:
+    """The diffusers postprocess plus the API server's rounding, for the same input.
 
-    Production widens bf16->f32 during SHM transport (ipc._tensor_to_shm), so
-    the engine's diffusers postprocess runs on float32; the API server then
-    rounds to uint8. Reproduce that ordering so the comparison is honest.
+    ``compute_dtype`` selects the precision the denormalize runs at.
+    ``torch.float32`` is the precision the device reduction uses; ``None`` keeps
+    the input's own dtype, which is what the engine's postprocess actually does.
     """
     from diffusers.video_processor import VideoProcessor
 
-    widened = video.float()  # SHM transport widening happens before postprocess
-    processed = VideoProcessor(vae_scale_factor=8).postprocess_video(widened, output_type="np")
+    source = video if compute_dtype is None else video.to(compute_dtype)
+    processed = VideoProcessor(vae_scale_factor=8).postprocess_video(source, output_type="np")
     scaled = np.clip(processed.astype(np.float32), 0.0, 1.0) * 255.0
     np.rint(scaled, out=scaled)
     return scaled.astype(np.uint8)
@@ -43,8 +43,8 @@ def _reference_uint8(video: torch.Tensor) -> np.ndarray:
 
 @requires_gpu
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
-def test_device_reduction_is_byte_identical_to_production(dtype: torch.dtype) -> None:
-    """Enabling the fast path must not move a single pixel value."""
+def test_device_reduction_matches_a_float32_reference(dtype: torch.dtype) -> None:
+    """The reduction must be the float32 computation, exactly, for every input dtype."""
     torch.manual_seed(0)
     # Values slightly outside [-1, 1] so the clamp is actually exercised.
     video = (torch.rand(1, 3, 8, 64, 96, device=_device()) * 2.4 - 1.2).to(dtype)
@@ -55,6 +55,30 @@ def test_device_reduction_is_byte_identical_to_production(dtype: torch.dtype) ->
     assert produced.shape == reference.shape == (1, 8, 64, 96, 3)
     assert produced.dtype == np.uint8
     np.testing.assert_array_equal(produced, reference)
+
+
+@requires_gpu
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+def test_device_reduction_deviates_from_a_narrow_postprocess_by_at_most_one(dtype: torch.dtype) -> None:
+    """Pin the real cost of computing in float32: at most one 255th, and only up.
+
+    A pipeline whose postprocess denormalizes in the VAE's own dtype (WAN,
+    HunyuanVideo, LTX-2 and Cosmos3 all do) does not agree with this reduction
+    bit for bit. Measured on a real 480x832x81 WAN generation, ~20% of pixels
+    differ, always by exactly one, because the reduction is the more precise of
+    the two. This test exists so that difference stays a documented bound rather
+    than a surprise, and so a regression that widens it fails here.
+    """
+    torch.manual_seed(0)
+    video = (torch.rand(1, 3, 8, 64, 96, device=_device()) * 2.4 - 1.2).to(dtype)
+
+    narrow = _reference_uint8(video, compute_dtype=None)
+    produced = reduce_video_to_uint8_frames(video).cpu().numpy()
+
+    deviation = np.abs(produced.astype(np.int16) - narrow.astype(np.int16))
+    assert deviation.max() <= 1
+    # The narrow path really is different, so the bound above is not vacuous.
+    assert deviation.any()
 
 
 @requires_gpu

@@ -61,15 +61,21 @@ def test_hunyuan_device_reduction_matches_float_path_np() -> None:
 
     post_process = get_hunyuan_video_15_post_process_func(SimpleNamespace())
 
-    float_np = post_process(vae_out.float(), output_type="np")  # [B, F, H, W, C] float32
+    # The device path computes in float32, so a float32 reference must match exactly.
+    # The engine denormalizes the bf16 decode in its own dtype, which lands on a
+    # different 255th for some pixels; that path is only bounded, not matched.
+    widened_np = post_process(vae_out.float(), output_type="np")  # [B, F, H, W, C] float32
+    native_np = post_process(vae_out, output_type="np")
     reduced = reduce_video_to_uint8_frames(vae_out)
     reduced_np = post_process(reduced, output_type="np")  # [B, F, H, W, C] uint8
     assert reduced_np.dtype == np.uint8
 
-    for i in range(float_np.shape[0]):
-        expected = _coerce_video_to_uint8_frames(float_np[i])
+    for i in range(widened_np.shape[0]):
+        expected = _coerce_video_to_uint8_frames(widened_np[i])
         produced = _coerce_video_to_uint8_frames(reduced_np[i])
         np.testing.assert_array_equal(produced, expected)
+        native = _coerce_video_to_uint8_frames(native_np[i])
+        assert np.abs(produced.astype(np.int16) - native.astype(np.int16)).max() <= 1
 
 
 @requires_gpu
