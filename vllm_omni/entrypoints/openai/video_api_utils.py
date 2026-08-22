@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """
 Shared helper utilities for OpenAI-compatible video generation API.
 """
@@ -10,9 +10,10 @@ import base64
 import binascii
 import os
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import httpx
 import numpy as np
@@ -37,7 +38,19 @@ from vllm_omni.entrypoints.openai.protocol.videos import (
     VideoReference,
 )
 
+if TYPE_CHECKING:
+    import av
+
+
 logger = init_logger(__name__)
+
+
+DEFAULT_AUDIO_SAMPLE_RATE = 24_000
+
+
+VideoInput = torch.Tensor | np.ndarray | list[torch.Tensor | np.ndarray | Image.Image]
+AudioSample = int | float
+AudioInput = torch.Tensor | np.ndarray | list[AudioSample] | list[list[AudioSample]]
 
 
 class VideoFrames(list[Image.Image]):
@@ -381,6 +394,9 @@ def _normalize_video_tensor(video_tensor: torch.Tensor) -> np.ndarray:
         # Cast to float32 first: bf16 (e.g. SANA-WM's refiner output) has no
         # numpy dtype, so ``.numpy()`` below raises on it.
         video_tensor = video_tensor.float().clamp(-1, 1) * 0.5 + 0.5
+    elif video_tensor.dtype == torch.uint8:
+        # Already encoder-ready; see _normalize_single_video_array.
+        return _normalize_single_video_array(video_tensor.numpy())
     else:
         video_tensor = video_tensor.to(torch.float32) / 255.0
     video_array = video_tensor.numpy()
@@ -402,8 +418,13 @@ def _normalize_single_video_array(video_array: np.ndarray) -> np.ndarray:
             video_array = np.transpose(video_array, (0, 2, 3, 1))
 
     if np.issubdtype(video_array.dtype, np.floating):
-        if video_array.min() < 0.0 or video_array.max() > 1.0:
+        if video_array.size and (video_array.min() < 0.0 or video_array.max() > 1.0):
             video_array = np.clip(video_array, -1.0, 1.0) * 0.5 + 0.5
+    elif video_array.dtype == np.uint8:
+        # Already encoder-ready. Widening to float here would undo the
+        # device-side reduction and cost a full float copy of the video; both
+        # muxing paths below branch on uint8 explicitly.
+        return video_array
     elif np.issubdtype(video_array.dtype, np.integer):
         video_array = video_array.astype(np.float32) / 255.0
     return video_array
@@ -436,7 +457,7 @@ def _normalize_frames(frames: list[Any]) -> list[np.ndarray]:
             frame_array = np.transpose(frame_array, (1, 2, 0))
 
         if np.issubdtype(frame_array.dtype, np.floating):
-            if frame_array.min() < 0.0 or frame_array.max() > 1.0:
+            if frame_array.size and (frame_array.min() < 0.0 or frame_array.max() > 1.0):
                 frame_array = np.clip(frame_array, -1.0, 1.0) * 0.5 + 0.5
         elif np.issubdtype(frame_array.dtype, np.integer):
             frame_array = frame_array.astype(np.float32) / 255.0
@@ -490,31 +511,29 @@ def _coerce_audio_to_numpy(audio: Any) -> np.ndarray:
     return arr.astype(np.float32)
 
 
-def _already_uint8_frames(video: object) -> bool:
-    """Whether a payload is already the (F, H, W, C) uint8 frames we want.
-
-    Normalising a device-reduced video widens it to float32, divides by 255 and
-    multiplies back: an identity costing a full float copy four times its size.
-    The layout heuristics stay in charge of anything else.
-    """
-    return isinstance(video, np.ndarray) and video.dtype == np.uint8 and video.ndim == 4 and video.shape[-1] in (3, 4)
-
-
-def _coerce_video_to_uint8_frames(video: Any) -> np.ndarray:
-    """Convert a video payload into contiguous uint8 frames shaped (F, H, W, 3)."""
-    if _already_uint8_frames(video):
-        frames_u8 = video[..., :3] if video.shape[-1] == 4 else video
-        return np.ascontiguousarray(frames_u8)
-
+def _prepare_video_frames(video: Any) -> tuple[list[np.ndarray], tuple[int, ...], np.dtype]:
+    """Normalize and validate frames for the common video encoding dispatcher."""
     frames = _coerce_video_to_frames(video)
     if not frames:
         raise ValueError("No frames found to encode.")
 
     frame_shape = frames[0].shape
+    if any(frame.shape != frame_shape for frame in frames[1:]):
+        raise ValueError("All video frames must have the same shape.")
+
+    common_dtype = np.result_type(*(frame.dtype for frame in frames))
+    return frames, frame_shape, common_dtype
+
+
+def _coerce_prepared_video_to_uint8_frames(
+    frames: list[np.ndarray],
+    frame_shape: tuple[int, ...],
+    common_dtype: np.dtype,
+) -> np.ndarray:
+    """Convert prepared frames into contiguous uint8 frames for the legacy muxer."""
     has_alpha = len(frame_shape) == 3 and frame_shape[-1] == 4
     output_shape = (*frame_shape[:-1], 3) if has_alpha else frame_shape
     frames_u8 = np.empty((len(frames), *output_shape), dtype=np.uint8)
-    common_dtype = np.result_type(*(frame.dtype for frame in frames))
 
     # Convert one frame at a time instead of stacking the normalized float
     # payload first. Long videos can otherwise require another full-size
@@ -536,6 +555,116 @@ def _coerce_video_to_uint8_frames(video: Any) -> np.ndarray:
         frames_u8[index] = scaled
 
     return frames_u8
+
+
+def _already_uint8_frames(video: object) -> bool:
+    """Whether a payload is already the (F, H, W, C) uint8 frames we want.
+
+    A device-reduced video arrives like this, and the frame-by-frame conversion
+    below would copy it again for nothing.
+    """
+    return isinstance(video, np.ndarray) and video.dtype == np.uint8 and video.ndim == 4 and video.shape[-1] in (3, 4)
+
+
+def _coerce_video_to_uint8_frames(video: Any) -> np.ndarray:
+    """Convert a video payload into contiguous uint8 frames shaped (F, H, W, 3)."""
+    if _already_uint8_frames(video):
+        frames_u8 = video[..., :3] if video.shape[-1] == 4 else video
+        return np.ascontiguousarray(frames_u8)
+
+    frames, frame_shape, common_dtype = _prepare_video_frames(video)
+    return _coerce_prepared_video_to_uint8_frames(frames, frame_shape, common_dtype)
+
+
+def _direct_planar_fallback_reason(
+    frames: list[np.ndarray],
+    frame_shape: tuple[int, ...],
+    common_dtype: np.dtype,
+) -> str | None:
+    """Return a stable reason when direct planar muxing cannot consume frames."""
+    if len(frame_shape) != 3 or frame_shape[0] <= 0 or frame_shape[1] <= 0 or frame_shape[2] not in (3, 4):
+        return "unsupported_shape"
+
+    if not (
+        common_dtype == np.dtype(np.uint8)
+        or np.issubdtype(common_dtype, np.bool_)
+        or np.issubdtype(common_dtype, np.floating)
+    ):
+        return "unsupported_dtype"
+
+    if not all(frame[..., channel].flags.c_contiguous for frame in frames for channel in range(3)):
+        return "non_contiguous_rgb_planes"
+
+    return None
+
+
+def _log_video_encoding_path(
+    *,
+    selected_path: str,
+    frames: list[np.ndarray],
+    frame_shape: tuple[int, ...],
+    common_dtype: np.dtype,
+    fps: int,
+    audio: AudioInput | None,
+    audio_sample_rate: int | None,
+    reason: str | None = None,
+) -> None:
+    reason_field = "" if reason is None else f" reason={reason}"
+    logger.info(
+        "Video response encoding route selected: selected_path=%s%s frames=%d frame_shape=%s dtype=%s fps=%s "
+        "audio_present=%s effective_audio_sample_rate=%s",
+        selected_path,
+        reason_field,
+        len(frames),
+        frame_shape,
+        np.dtype(common_dtype).name,
+        fps,
+        audio is not None,
+        audio_sample_rate,
+    )
+
+
+def _resolve_audio_sample_rate(audio: AudioInput | None, audio_sample_rate: int | None) -> int:
+    if audio is not None and audio_sample_rate is None:
+        logger.info_once(
+            "Audio sample rate was not provided; using default sample rate of %s Hz.",
+            DEFAULT_AUDIO_SAMPLE_RATE,
+        )
+    return audio_sample_rate or DEFAULT_AUDIO_SAMPLE_RATE
+
+
+def _iter_planar_video_frames(
+    frames: list[np.ndarray],
+    common_dtype: np.dtype,
+) -> Iterator[av.VideoFrame]:
+    """Yield planar PyAV frames while retaining only one channel scratch buffer."""
+    import av
+
+    height, width = frames[0].shape[:2]
+    scratch_dtype = np.float64 if np.issubdtype(common_dtype, np.bool_) else common_dtype
+    scratch = None if common_dtype == np.uint8 else np.empty((height, width), dtype=scratch_dtype)
+
+    for frame in frames:
+        av_frame = av.VideoFrame(width, height, format="gbrp")
+        for plane, channel in zip(av_frame.planes, (1, 2, 0)):
+            if plane.height < height or plane.line_size < width:
+                raise ValueError("PyAV video plane is smaller than the requested frame dimensions.")
+            plane_view = np.frombuffer(
+                plane,
+                dtype=np.uint8,
+                count=plane.height * plane.line_size,
+            ).reshape(plane.height, plane.line_size)
+            plane_view.fill(0)
+            if frame.dtype == np.uint8:
+                plane_view[:height, :width] = frame[..., channel]
+            else:
+                scratch_buffer = cast(np.ndarray, scratch)
+                np.copyto(scratch_buffer, frame[..., channel], casting="unsafe")
+                np.clip(scratch_buffer, 0.0, 1.0, out=scratch_buffer)
+                scratch_buffer *= 255.0
+                np.rint(scratch_buffer, out=scratch_buffer)
+                plane_view[:height, :width] = scratch_buffer
+        yield av_frame
 
 
 @dataclass(frozen=True)
@@ -616,6 +745,56 @@ def resolve_video_encoder_settings(
     )
 
 
+def _encode_prepared_video_bytes_legacy(
+    frames: list[np.ndarray],
+    frame_shape: tuple[int, ...],
+    common_dtype: np.dtype,
+    fps: int,
+    audio: Any | None = None,
+    audio_sample_rate: int | None = None,
+    video_codec_options: dict[str, str] | None = None,
+    video_codec: str | None = None,
+    output_format: str | None = None,
+) -> bytes:
+    """Encode validated frames through the compatibility path used before planar encoding."""
+    from vllm_omni.diffusion.utils.media_utils import default_video_codec_for_format, mux_video_audio_bytes
+
+    audio_np = _coerce_audio_to_numpy(audio) if audio is not None else None
+    return mux_video_audio_bytes(
+        _coerce_prepared_video_to_uint8_frames(frames, frame_shape, common_dtype),
+        audio_np,
+        fps=float(fps),
+        audio_sample_rate=audio_sample_rate or DEFAULT_AUDIO_SAMPLE_RATE,
+        video_codec_options=video_codec_options,
+        video_codec=video_codec or default_video_codec_for_format(output_format),
+        output_format=output_format,
+    )
+
+
+def _encode_video_bytes_legacy(
+    video: Any,
+    fps: int,
+    audio: Any | None = None,
+    audio_sample_rate: int | None = None,
+    video_codec_options: dict[str, str] | None = None,
+    video_codec: str | None = None,
+    output_format: str | None = None,
+) -> bytes:
+    """Encode through the compatibility path used before planar encoding."""
+    frames, frame_shape, common_dtype = _prepare_video_frames(video)
+    return _encode_prepared_video_bytes_legacy(
+        frames,
+        frame_shape,
+        common_dtype,
+        fps,
+        audio=audio,
+        audio_sample_rate=_resolve_audio_sample_rate(audio, audio_sample_rate),
+        video_codec_options=video_codec_options,
+        video_codec=video_codec,
+        output_format=output_format,
+    )
+
+
 def _encode_video_bytes(
     video: Any,
     fps: int,
@@ -625,18 +804,56 @@ def _encode_video_bytes(
     video_codec: str | None = None,
     output_format: str | None = None,
 ) -> bytes:
-    """Encode a video payload into MP4 bytes, optionally muxing audio."""
-    from vllm_omni.diffusion.utils.media_utils import default_video_codec_for_format, mux_video_audio_bytes
+    """Encode a video payload through the automatic capability dispatcher."""
+    from vllm_omni.diffusion.utils.media_utils import default_video_codec_for_format, mux_av_video_audio_bytes
 
+    # Prepare once so validation is shared by both paths and malformed common
+    # input is reported before any muxer is opened.
+    frames, frame_shape, common_dtype = _prepare_video_frames(video)
+    effective_audio_sample_rate = _resolve_audio_sample_rate(audio, audio_sample_rate) if audio is not None else None
+    fallback_reason = _direct_planar_fallback_reason(frames, frame_shape, common_dtype)
+    if fallback_reason is not None:
+        _log_video_encoding_path(
+            selected_path="legacy_fallback",
+            reason=fallback_reason,
+            frames=frames,
+            frame_shape=frame_shape,
+            common_dtype=common_dtype,
+            fps=fps,
+            audio=audio,
+            audio_sample_rate=effective_audio_sample_rate,
+        )
+        return _encode_prepared_video_bytes_legacy(
+            frames,
+            frame_shape,
+            common_dtype,
+            fps,
+            audio=audio,
+            audio_sample_rate=effective_audio_sample_rate,
+            video_codec_options=video_codec_options,
+            video_codec=video_codec,
+            output_format=output_format,
+        )
+
+    _log_video_encoding_path(
+        selected_path="direct_planar",
+        frames=frames,
+        frame_shape=frame_shape,
+        common_dtype=common_dtype,
+        fps=fps,
+        audio=audio,
+        audio_sample_rate=effective_audio_sample_rate,
+    )
     audio_np = _coerce_audio_to_numpy(audio) if audio is not None else None
-
-    return mux_video_audio_bytes(
-        _coerce_video_to_uint8_frames(video),
-        audio_np,
+    return mux_av_video_audio_bytes(
+        _iter_planar_video_frames(frames, common_dtype),
+        width=frame_shape[1],
+        height=frame_shape[0],
+        audio_waveform=audio_np,
         fps=float(fps),
-        audio_sample_rate=audio_sample_rate or 24000,
-        video_codec=video_codec or default_video_codec_for_format(output_format),
+        audio_sample_rate=effective_audio_sample_rate,
         video_codec_options=video_codec_options,
+        video_codec=video_codec or default_video_codec_for_format(output_format),
         output_format=output_format,
     )
 

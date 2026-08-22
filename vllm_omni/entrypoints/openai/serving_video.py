@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from __future__ import annotations
 
-import base64
 import copy
 import time
 import uuid
@@ -11,8 +10,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from http import HTTPStatus
-from typing import Any, cast
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any, cast
 
+import pybase64 as base64
 from fastapi import HTTPException
 from PIL import Image
 from vllm.engine.protocol import EngineClient
@@ -32,6 +33,7 @@ from vllm_omni.entrypoints.openai.stage_params import (
 )
 from vllm_omni.entrypoints.openai.utils import get_stage_type, parse_lora_request
 from vllm_omni.entrypoints.openai.video_api_utils import (
+    VideoEncoderSettings,
     _encode_video_bytes,
     resolve_video_encoder_settings,
 )
@@ -44,6 +46,9 @@ from vllm_omni.outputs.output_metadata import (
 )
 
 logger = init_logger(__name__)
+
+if TYPE_CHECKING:
+    from vllm_omni.diffusion.data import OmniDiffusionConfig
 
 
 @dataclass
@@ -95,6 +100,12 @@ class OmniOpenAIServingVideo:
         self._model_name = model_name
         self._stage_configs = stage_configs
 
+    def _resolve_diffusion_od_config(self) -> OmniDiffusionConfig | SimpleNamespace | None:
+        get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
+        if callable(get_od_config):
+            return get_od_config()
+        return getattr(self._engine_client, "od_config", None)
+
     @property
     def model_name(self) -> str | None:
         return self._model_name
@@ -110,8 +121,7 @@ class OmniOpenAIServingVideo:
     @cached_property
     def preserves_reference_image_size(self) -> bool:
         """Return whether the active pipeline owns reference-image resizing."""
-        get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
-        od_config = get_od_config() if callable(get_od_config) else getattr(self._engine_client, "od_config", None)
+        od_config = self._resolve_diffusion_od_config()
         model_class_name = None if od_config is None else getattr(od_config, "model_class_name", None)
         model = getattr(od_config, "model", None) if od_config is not None else None
         model = model or self.model_name
@@ -125,8 +135,7 @@ class OmniOpenAIServingVideo:
     @property
     def supports_mixed_reference_inputs(self) -> bool:
         """Return whether the configured diffusion model accepts mixed refs."""
-        get_od_config = getattr(self._engine_client, "get_diffusion_od_config", None)
-        od_config = get_od_config() if callable(get_od_config) else getattr(self._engine_client, "od_config", None)
+        od_config = self._resolve_diffusion_od_config()
         if od_config is None:
             return False
 
@@ -311,10 +320,12 @@ class OmniOpenAIServingVideo:
             peak_memory_mb=self._extract_peak_memory_mb(result),
         )
 
-    def _resolve_video_encoder(self, request: VideoGenerationRequest, *, low_latency: bool = False) -> tuple[str, dict]:
-        """Resolve the MP4 encoder and its options for the engine->HTTP hop.
+    def _resolve_video_encoder(
+        self, request: VideoGenerationRequest, *, low_latency: bool = False
+    ) -> VideoEncoderSettings:
+        """Resolve the video output policy for the engine->HTTP hop.
 
-        Precedence for both codec and options: per-request ``extra_params``
+        Precedence for codec, options and format: per-request ``extra_params``
         overrides the deployment's ``video_output_transport``. An unavailable
         hardware encoder falls back to software, and empty options mean the fast
         presets for whichever codec runs.

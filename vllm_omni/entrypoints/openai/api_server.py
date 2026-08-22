@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 import asyncio
 import base64
 import dataclasses
@@ -2377,7 +2378,7 @@ async def edit_images(
                     status_code=generation_result.error.code if generation_result.error else 400,
                     detail=generation_result.message,
                 )
-            images, _, _, cot_output = generation_result
+            images, stage_durations, peak_memory_mb, cot_output = generation_result
         else:
             # Single-stage diffusion: use the direct path.
             result = await _generate_with_async_omni(
@@ -2388,6 +2389,8 @@ async def edit_images(
                 request_id=request_id,
             )
             images = _extract_images_from_result(result)
+            stage_durations = getattr(result, "stage_durations", None)
+            peak_memory_mb = getattr(result, "peak_memory_mb", None)
 
         logger.debug(f"Successfully generated {len(images)} image(s)")
 
@@ -2408,6 +2411,10 @@ async def edit_images(
             output_format=output_format,
             size=size_str,
             cot_output=cot_output,
+            metrics={
+                "stage_durations": stage_durations or None,
+                "peak_memory_mb": float(peak_memory_mb) if peak_memory_mb else None,
+            },
         )
 
     except (EngineGenerateError, EngineDeadError) as exc:
