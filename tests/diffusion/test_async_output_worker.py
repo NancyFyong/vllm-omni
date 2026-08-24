@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Unit tests for WorkerProc async output logic."""
 
 import queue
@@ -181,6 +181,19 @@ class TestReturnResultSyncPath:
 
         mock_pack.assert_called_once_with(output)
         proc.result_mq.enqueue.assert_called_once_with(output)
+
+    def test_media_contract_error_is_not_sent_as_an_unpacked_result(self, mocker):
+        proc = _make_worker_proc(step_execution=True)
+        proc._async_output_queue = None
+        mocker.patch(
+            "vllm_omni.diffusion.worker.diffusion_worker.pack_diffusion_output_shm",
+            side_effect=ValueError("media was not prepared"),
+        )
+
+        with pytest.raises(ValueError, match="media was not prepared"):
+            proc._return_result(DiffusionOutput())
+
+        proc.result_mq.enqueue.assert_not_called()
 
     def test_non_diffusion_output_skips_async_in_request_mode(self, mocker):
         """Non-DiffusionOutput/BatchRunnerOutput in request mode uses sync path."""

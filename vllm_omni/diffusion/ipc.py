@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 """IPC utilities for transferring large tensors via POSIX shared memory.
 
@@ -17,9 +17,21 @@ import numpy as np
 import torch
 
 from vllm_omni.diffusion.data import DiffusionOutput
+from vllm_omni.diffusion.media import (
+    DiffusionMediaOutput,
+    FloatVideoConsumer,
+    VideoColorModel,
+    VideoMediaOutput,
+    VideoTensorEncoding,
+    VideoTensorLayout,
+    VideoTensorSpec,
+    VideoTransportConstraints,
+    VideoValueRange,
+)
 
 _SHM_TENSOR_THRESHOLD = 1_000_000  # 1 MB
 DIFFUSION_RPC_RESULT_ENVELOPE = "diffusion_rpc_result"
+_DIFFUSION_MEDIA_WIRE_TYPE = "diffusion_media_v1"
 
 
 def _array_to_shm(array: np.ndarray) -> dict[str, Any]:
@@ -190,12 +202,81 @@ def _unpack_if_shm_handle(val: object) -> object:
     return val
 
 
+def _pack_diffusion_media(
+    media: DiffusionMediaOutput,
+    *,
+    d2h_stream: torch.Stream | None,
+) -> dict[str, Any]:
+    media.validate()
+    if not media.prepared_for_transport:
+        raise ValueError("Diffusion media must be prepared before IPC packing")
+    video = media.video
+    packed_tensor = _pack_tensor_if_large(video.tensor, d2h_stream=d2h_stream)
+    if isinstance(packed_tensor, torch.Tensor) and packed_tensor.device.type != "cpu":
+        packed_tensor = packed_tensor.detach().cpu().contiguous()
+    return {
+        "__type__": _DIFFUSION_MEDIA_WIRE_TYPE,
+        "schema_version": video.schema_version,
+        "prepared_for_transport": True,
+        "video": {
+            "tensor": packed_tensor,
+            "layout": video.spec.layout.value,
+            "encoding": video.spec.encoding.value,
+            "value_range": video.spec.value_range.value,
+            "color_model": video.spec.color_model.value,
+            "pending_float_consumers": sorted(consumer.value for consumer in video.constraints.pending_float_consumers),
+        },
+    }
+
+
+def _unpack_diffusion_media(packed: dict[str, Any]) -> DiffusionMediaOutput:
+    if packed.get("__type__") != _DIFFUSION_MEDIA_WIRE_TYPE:
+        raise ValueError("Invalid diffusion media wire payload")
+    video_payload = packed.get("video")
+    if not isinstance(video_payload, dict):
+        raise ValueError("Diffusion media wire payload is missing video metadata")
+    tensor = _unpack_if_shm_handle(video_payload.get("tensor"))
+    if not isinstance(tensor, torch.Tensor):
+        raise ValueError("Diffusion media wire payload contains an invalid video tensor")
+    schema_version = packed.get("schema_version")
+    if schema_version != 1:
+        raise ValueError(f"Unsupported video media schema version: {schema_version}")
+    if packed.get("prepared_for_transport") is not True:
+        raise ValueError("Diffusion media wire payload was not prepared for transport")
+    media = DiffusionMediaOutput(
+        video=VideoMediaOutput(
+            tensor=tensor,
+            spec=VideoTensorSpec(
+                layout=VideoTensorLayout(video_payload["layout"]),
+                encoding=VideoTensorEncoding(video_payload["encoding"]),
+                value_range=VideoValueRange(video_payload["value_range"]),
+                color_model=VideoColorModel(video_payload["color_model"]),
+            ),
+            constraints=VideoTransportConstraints(
+                pending_float_consumers=frozenset(
+                    FloatVideoConsumer(value) for value in video_payload.get("pending_float_consumers", [])
+                )
+            ),
+            schema_version=1,
+        ),
+        prepared_for_transport=True,
+    )
+    media.validate()
+    return media
+
+
 def _pack_diffusion_fields(
     output: DiffusionOutput,
     d2h_stream: torch.Stream | None = None,
 ) -> DiffusionOutput:
+    if output.media is not None and output.output is not None:
+        raise ValueError("DiffusionOutput cannot contain both media and legacy output")
     if output.output is not None:
         output.output = _pack_value_if_large(output.output, d2h_stream=d2h_stream)
+    if output.media is not None:
+        if not isinstance(output.media, DiffusionMediaOutput):
+            raise TypeError(f"DiffusionOutput.media must be DiffusionMediaOutput, got {type(output.media).__name__}")
+        output.media = _pack_diffusion_media(output.media, d2h_stream=d2h_stream)  # type: ignore[assignment]
     if output.trajectory_latents is not None and isinstance(output.trajectory_latents, torch.Tensor):
         output.trajectory_latents = _pack_tensor_if_large(output.trajectory_latents, d2h_stream=d2h_stream)
     if output.trajectory_timesteps is not None and isinstance(output.trajectory_timesteps, torch.Tensor):
@@ -252,6 +333,8 @@ def pack_diffusion_output_shm(
 
 def _unpack_diffusion_fields(output: DiffusionOutput) -> DiffusionOutput:
     output.output = _unpack_if_shm_handle(output.output)
+    if isinstance(output.media, dict):
+        output.media = _unpack_diffusion_media(output.media)
     output.trajectory_latents = _unpack_if_shm_handle(output.trajectory_latents)
     output.trajectory_timesteps = _unpack_if_shm_handle(output.trajectory_timesteps)
     output.trajectory_log_probs = _unpack_if_shm_handle(output.trajectory_log_probs)

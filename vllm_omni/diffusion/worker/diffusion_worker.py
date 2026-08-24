@@ -1047,6 +1047,8 @@ class WorkerProc:
         # Sync path (original, or async fallback).
         try:
             pack_diffusion_output_shm(output)
+        except (TypeError, ValueError):
+            raise
         except Exception as e:
             if hasattr(output, "output"):
                 logger.warning("SHM pack failed for model output: %s", e)
