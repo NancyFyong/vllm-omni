@@ -96,6 +96,7 @@ th {
 | `Flux2Pipeline` | FLUX.2-dev | `black-forest-labs/FLUX.2-dev` | ✅︎ | ✅︎ | | | — |
 | `FishSpeechSlowARForConditionalGeneration` | Fish Speech S2 Pro | `fishaudio/s2-pro` | ✅︎ | ✅︎ | | ✅︎ | — |
 | `Audio8TTSSlowARForConditionalGeneration` | Audio8 TTS Preview | `Audio8/Audio8-TTS-Preview-0.6b` | ✅︎ | | | | — |
+| `Audio8TTS01BSlowARForConditionalGeneration` | Audio8 TTS Preview 0.1B | `Audio8/Audio8-TTS-Preview-0.1b` | ✅︎ | | | | — |
 | `SenseNovaU1Pipeline` | SenseNova-U1 (DiT-only) | `SenseNova/SenseNova-U1-8B-MoT` | ✅︎ | | | | — |
 | `LancePipeline` | Lance | `bytedance-research/Lance` | ✅︎ | | | | — |
 | `HunyuanVideo15Pipeline` | HunyuanVideo-1.5-T2V | `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v`, `hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v` | ✅︎ | ✅︎ | | | — |
