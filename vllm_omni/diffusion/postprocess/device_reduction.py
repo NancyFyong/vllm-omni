@@ -13,6 +13,7 @@ from vllm_omni.diffusion.data import OmniDiffusionConfig
 from vllm_omni.diffusion.media import (
     DiffusionMediaOutput,
     FloatVideoConsumer,
+    VideoMediaOutput,
     VideoTensorEncoding,
     VideoTensorLayout,
     VideoTensorSpec,
@@ -39,6 +40,19 @@ def _request_float_consumers(
 
 def _request_supports_uint8_frames(sampling_params: OmniDiffusionSamplingParams | None) -> bool:
     return sampling_params is None or (sampling_params.output_type or "np") == "np"
+
+
+def _prepare_float_media_for_transport(
+    media: DiffusionMediaOutput,
+    video: VideoMediaOutput,
+) -> DiffusionMediaOutput:
+    prepared = replace(
+        media,
+        video=video.with_tensor(ensure_request_owned_tensor(video.tensor)),
+        prepared_for_transport=True,
+    )
+    prepared.validate()
+    return prepared
 
 
 def prepare_diffusion_media_for_transport(
@@ -70,18 +84,16 @@ def prepare_diffusion_media_for_transport(
         else:
             reason = "unsupported_presentation"
         logger.debug("Device video preparation kept normalized float: reason=%s", reason)
-        prepared = replace(
-            media,
-            video=constrained_video.with_tensor(ensure_request_owned_tensor(constrained_video.tensor)),
-            prepared_for_transport=True,
-        )
-        prepared.validate()
-        return prepared
+        return _prepare_float_media_for_transport(media, constrained_video)
 
-    frames = reduce_video_to_uint8_frames(
-        constrained_video.tensor,
-        do_denormalize=constrained_video.spec.value_range is VideoValueRange.NEGATIVE_ONE_TO_ONE,
-    )
+    try:
+        frames = reduce_video_to_uint8_frames(
+            constrained_video.tensor,
+            do_denormalize=constrained_video.spec.value_range is VideoValueRange.NEGATIVE_ONE_TO_ONE,
+        )
+    except torch.OutOfMemoryError:
+        logger.warning("Device video preparation ran out of memory; using normalized float transport")
+        return _prepare_float_media_for_transport(media, constrained_video)
     prepared_video = replace(
         constrained_video,
         tensor=frames,

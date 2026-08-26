@@ -10,6 +10,7 @@ import pytest
 import torch
 
 import vllm_omni.diffusion.ipc as diffusion_ipc
+import vllm_omni.diffusion.postprocess.device_reduction as device_reduction
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig, VideoOutputTransportConfig
 from vllm_omni.diffusion.ipc import pack_diffusion_output_shm, unpack_diffusion_output_shm
 from vllm_omni.diffusion.media import (
@@ -94,6 +95,43 @@ def test_disabled_runtime_preserves_float_but_marks_media_prepared() -> None:
     assert prepared.prepared_for_transport is True
     assert prepared.video.tensor is video
     assert prepared.video.spec.encoding is VideoTensorEncoding.NORMALIZED_FLOAT
+
+
+def test_device_oom_falls_back_to_request_owned_float_media(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = torch.randn(2, 3, 2, 4, 5)
+    sliced = slice_diffusion_media_output(_media(source), 0, 1)
+
+    def raise_oom(video: torch.Tensor, *, do_denormalize: bool) -> torch.Tensor:
+        raise torch.OutOfMemoryError("injected")
+
+    monkeypatch.setattr(device_reduction, "reduce_video_to_uint8_frames", raise_oom)
+
+    prepared = prepare_diffusion_media_for_transport(
+        sliced,
+        od_config=_config(enabled=True),
+        sampling_params=_sampling(),
+    )
+
+    assert prepared.prepared_for_transport is True
+    assert prepared.video.spec.encoding is VideoTensorEncoding.NORMALIZED_FLOAT
+    assert prepared.video.tensor.dtype == source.dtype
+    assert prepared.video.tensor.shape == (1, 3, 2, 4, 5)
+    assert prepared.video.tensor.is_contiguous()
+    assert prepared.video.tensor._base is None
+
+
+def test_device_non_oom_error_is_not_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    def raise_runtime_error(video: torch.Tensor, *, do_denormalize: bool) -> torch.Tensor:
+        raise RuntimeError("injected")
+
+    monkeypatch.setattr(device_reduction, "reduce_video_to_uint8_frames", raise_runtime_error)
+
+    with pytest.raises(RuntimeError, match="injected"):
+        prepare_diffusion_media_for_transport(
+            _media(torch.randn(1, 3, 2, 4, 5)),
+            od_config=_config(enabled=True),
+            sampling_params=_sampling(),
+        )
 
 
 def test_declared_and_request_float_consumers_are_unioned() -> None:

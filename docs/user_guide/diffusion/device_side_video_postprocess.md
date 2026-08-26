@@ -47,8 +47,11 @@ The runtime leaves the video in normalized floating-point form when:
 - the requested output type is not `np`; or
 - frame interpolation still requires the floating-point tensor.
 
-These are policy fallbacks, not malformed-contract errors. Invalid tensor
-layout, encoding, value range, or lifecycle state fails before IPC.
+These are policy fallbacks, not malformed-contract errors. If the device cannot
+allocate the temporary conversion buffer, the runner logs a warning and prepares
+the request-local float representation instead. Invalid tensor layout, encoding,
+value range, lifecycle state, and non-memory runtime failures still fail before
+IPC.
 
 ## Precision
 
