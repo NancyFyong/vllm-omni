@@ -1513,7 +1513,6 @@ class DiffusionOutput:
     """
 
     output: torch.Tensor | tuple[Any, ...] | dict[str, Any] | None = None
-    media: DiffusionMediaOutput | None = None
 
     # Legacy compatibility fields. Decoded video uses ``media``; other new
     # payloads should be carried by output["payload"] instead.
@@ -1554,6 +1553,11 @@ class DiffusionOutput:
     # the output is shipped across process boundaries (e.g. step-execution
     # mode) and the receiving side must not initialise a stray CUDA context.
     to_cpu: bool = False
+
+    # Typed video-media contract. Declared last so the pre-existing positional
+    # constructor order (output, trajectory_timesteps, ...) that out-of-tree
+    # pipelines rely on is preserved. Mutually exclusive with ``output``.
+    media: DiffusionMediaOutput | None = None
 
     def __post_init__(self) -> None:
         if self.media is not None and not isinstance(self.media, DiffusionMediaOutput):

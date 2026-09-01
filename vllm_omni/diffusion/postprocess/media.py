@@ -33,12 +33,20 @@ def finalize_diffusion_media(
     if FloatVideoConsumer.FRAME_INTERPOLATION in consumers:
         if video.spec.encoding is not VideoTensorEncoding.NORMALIZED_FLOAT:
             raise ValueError("Frame interpolation requires NORMALIZED_FLOAT video")
+        # RIFE guesses [0,1] vs [-1,1] from the tensor's min/max, so an
+        # all-nonnegative [-1,1] clip is misread as [0,1] and interpolated in
+        # the wrong space. Normalize to unit range per the declared spec, then
+        # restore the declared range so downstream denormalization is correct.
+        to_unit = video.spec.value_range is VideoValueRange.NEGATIVE_ONE_TO_ONE
+        interp_input = video.tensor.mul(0.5).add(0.5).clamp_(0.0, 1.0) if to_unit else video.tensor
         interpolated, multiplier = interpolate_video_tensor(
-            video.tensor,
+            interp_input,
             exp=sampling_params.frame_interpolation_exp,
             scale=sampling_params.frame_interpolation_scale,
             model_path=sampling_params.frame_interpolation_model_path,
         )
+        if to_unit:
+            interpolated = interpolated.mul(2.0).sub(1.0)
         consumers = consumers - {FloatVideoConsumer.FRAME_INTERPOLATION}
         video = replace(
             video,

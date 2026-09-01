@@ -295,3 +295,142 @@ def test_diffusion_output_rejects_postprocessor_on_typed_media() -> None:
 
     with pytest.raises(ValueError, match="model-specific post_process_func"):
         DiffusionOutput(media=media, post_process_func=lambda value: value)
+
+
+def test_diffusion_output_preserves_the_legacy_positional_constructor() -> None:
+    # ``media`` was originally declared right after ``output``, which broke
+    # ``DiffusionOutput(output, trajectory_timesteps)`` by binding the second
+    # argument to media. It must stay last so out-of-tree positional callers keep
+    # the pre-existing field order.
+    output_tensor = torch.randn(1)
+    timesteps = torch.tensor([1, 2, 3])
+
+    output = DiffusionOutput(output_tensor, timesteps)
+
+    assert output.output is output_tensor
+    assert output.trajectory_timesteps is timesteps
+    assert output.media is None
+
+
+def test_frame_interpolation_uses_the_declared_range_negative_one_to_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # RIFE infers [0,1] vs [-1,1] from the tensor min/max, so an all-nonnegative
+    # [-1,1] clip is misread as [0,1] and interpolated in the wrong space. The
+    # interpolator must receive the unit-range form per the declared spec.
+    video = torch.full((1, 3, 2, 3, 3), 0.25)
+    media = DiffusionMediaOutput(
+        video=VideoMediaOutput(
+            tensor=video,
+            spec=VideoTensorSpec(
+                layout=VideoTensorLayout.BCTHW,
+                encoding=VideoTensorEncoding.NORMALIZED_FLOAT,
+                value_range=VideoValueRange.NEGATIVE_ONE_TO_ONE,
+            ),
+            constraints=VideoTransportConstraints(
+                pending_float_consumers=frozenset({FloatVideoConsumer.FRAME_INTERPOLATION})
+            ),
+        ),
+        prepared_for_transport=True,
+    )
+
+    seen: list[torch.Tensor] = []
+
+    def _square_interpolator(tensor: torch.Tensor, **_kwargs: object) -> tuple[torch.Tensor, float]:
+        seen.append(tensor)
+        return tensor * tensor, 2.0
+
+    monkeypatch.setattr(media_postprocess, "interpolate_video_tensor", _square_interpolator)
+
+    output = finalize_diffusion_media(
+        media,
+        sampling_params=OmniDiffusionSamplingParams(output_type="np", enable_frame_interpolation=True),
+    )
+
+    # The interpolator is fed the unit-range form 0.25→0.625, not raw 0.25.
+    assert len(seen) == 1
+    assert seen[0].shape == video.shape
+    assert float(seen[0][0, 0, 0, 0, 0]) == pytest.approx(0.625, abs=1e-6)
+    # Squaring gives 0.390625; restored to [-1,1] (-0.21875) by the fix, then the
+    # existing denormalize maps it back to [0,1] as 0.390625 in the public frames.
+    frames = output["payload"]["video"]
+    assert np.allclose(np.asarray(frames), 0.390625, atol=1e-6)
+
+
+def test_frame_interpolation_uses_the_declared_range_zero_to_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # With a declared [0,1] range, the all-0.25 clip is already in unit space, so
+    # squaring gives 0.390625 and there is no restore step.
+    video = torch.full((1, 3, 2, 3, 3), 0.25)
+    media = DiffusionMediaOutput(
+        video=VideoMediaOutput(
+            tensor=video,
+            spec=VideoTensorSpec(
+                layout=VideoTensorLayout.BCTHW,
+                encoding=VideoTensorEncoding.NORMALIZED_FLOAT,
+                value_range=VideoValueRange.ZERO_TO_ONE,
+            ),
+            constraints=VideoTransportConstraints(
+                pending_float_consumers=frozenset({FloatVideoConsumer.FRAME_INTERPOLATION})
+            ),
+        ),
+        prepared_for_transport=True,
+    )
+
+    def _square_interpolator(tensor: torch.Tensor, **_kwargs: object) -> tuple[torch.Tensor, float]:
+        return tensor * tensor, 2.0
+
+    monkeypatch.setattr(media_postprocess, "interpolate_video_tensor", _square_interpolator)
+
+    output = finalize_diffusion_media(
+        media,
+        sampling_params=OmniDiffusionSamplingParams(output_type="np", enable_frame_interpolation=True),
+    )
+
+    # 0.25 is already [0,1]; squaring gives 0.0625, and no denormalize is applied.
+    frames = output["payload"]["video"]
+    assert np.allclose(np.asarray(frames), 0.0625, atol=1e-6)
+
+
+def test_packing_failure_unlinks_created_segments_and_leaves_output_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Packing a late field can fail after an SHM segment is already created;
+    # the segment must be unlinked and ``output`` left unmutated so a partial
+    # object is never enqueued.
+    prepared = prepare_diffusion_media_for_transport(
+        DiffusionMediaOutput(
+            video=_video(
+                torch.linspace(-1.0, 1.0, 2 * 3 * 2 * 4 * 5).reshape(2, 3, 2, 4, 5),
+                encoding=VideoTensorEncoding.NORMALIZED_FLOAT,
+                value_range=VideoValueRange.NEGATIVE_ONE_TO_ONE,
+            )
+        ),
+        od_config=_od_config(enabled=False),
+        sampling_params=OmniDiffusionSamplingParams(output_type="np"),
+    )
+    output = DiffusionOutput(media=prepared, trajectory_latents=torch.randn(30))
+    original_media = prepared
+    original_latents = output.trajectory_latents
+
+    real_array_to_shm = diffusion_ipc._array_to_shm
+    calls: list[str] = []
+
+    def _fail_on_second(array: np.ndarray) -> dict[str, object]:
+        calls.append("called")
+        if len(calls) >= 2:
+            raise RuntimeError("injected packing failure")
+        return real_array_to_shm(array)
+
+    monkeypatch.setattr(diffusion_ipc, "_SHM_TENSOR_THRESHOLD", 1)
+    monkeypatch.setattr(diffusion_ipc, "_array_to_shm", _fail_on_second)
+
+    with pytest.raises(RuntimeError, match="injected packing failure"):
+        pack_diffusion_output_shm(output)
+
+    assert calls, "no SHM segment was created before the injected failure"
+    # Output was not mutated despite the media segment being created first.
+    assert output.media is original_media
+    assert isinstance(output.media, DiffusionMediaOutput)
+    assert output.trajectory_latents is original_latents

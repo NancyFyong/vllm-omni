@@ -135,7 +135,7 @@ class DiffusionMediaOutput:
             return
         if not self.video.tensor.is_contiguous():
             raise ValueError("Prepared video media tensor must be contiguous")
-        if self.video.tensor._base is not None:
+        if not _owns_compact_storage(self.video.tensor):
             raise ValueError("Prepared video media tensor must own request-local storage")
 
     def with_video(self, video: VideoMediaOutput) -> DiffusionMediaOutput:
@@ -148,8 +148,27 @@ class DiffusionMediaOutput:
         return moved
 
 
+def _owns_compact_storage(tensor: torch.Tensor) -> bool:
+    """True if *tensor* is contiguous and backed by exactly its own elements.
+
+    ``tensor._base is None`` is not sufficient: ``batch[i : i + 1].detach()`` is
+    contiguous with ``_base=None`` yet keeps a nonzero storage offset and the
+    whole batch storage, so serializing it would leak every other request's
+    pixels. Require a zero offset and a storage sized to the logical elements.
+    """
+    if not tensor.is_contiguous():
+        return False
+    if tensor.storage_offset() != 0:
+        return False
+    try:
+        storage_bytes = tensor.untyped_storage().nbytes()
+    except Exception:
+        return False
+    return storage_bytes == tensor.numel() * tensor.element_size()
+
+
 def ensure_request_owned_tensor(tensor: torch.Tensor) -> torch.Tensor:
-    if tensor.is_contiguous() and tensor._base is None:
+    if _owns_compact_storage(tensor):
         return tensor
     # A contiguous view may still retain another request's full batch storage.
     return tensor.clone(memory_format=torch.contiguous_format)

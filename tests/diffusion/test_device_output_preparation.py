@@ -22,6 +22,7 @@ from vllm_omni.diffusion.media import (
     VideoTensorSpec,
     VideoTransportConstraints,
     VideoValueRange,
+    ensure_request_owned_tensor,
     slice_diffusion_media_output,
 )
 from vllm_omni.diffusion.postprocess.device_reduction import prepare_diffusion_media_for_transport
@@ -367,3 +368,93 @@ def test_ipc_rejects_unknown_media_schema_version() -> None:
 
     with pytest.raises(ValueError, match="schema version"):
         unpack_diffusion_output_shm(output)
+
+
+def test_prepare_rejects_media_a_pipeline_already_prepared(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A pipeline must emit unprepared media so the runner applies request policy
+    # (e.g. frame interpolation). Accepting a forged prepared uint8 payload would
+    # skip the interpolation constraint; interpolator never runs and gets dropped.
+    forged = DiffusionMediaOutput(
+        video=VideoMediaOutput(
+            tensor=torch.zeros(1, 2, 4, 5, 3, dtype=torch.uint8),
+            spec=VideoTensorSpec(
+                layout=VideoTensorLayout.BTHWC,
+                encoding=VideoTensorEncoding.UINT8_FRAMES,
+                value_range=VideoValueRange.ZERO_TO_255,
+            ),
+        ),
+        prepared_for_transport=True,
+    )
+
+    with pytest.raises(ValueError, match="already prepared"):
+        prepare_diffusion_media_for_transport(
+            forged,
+            od_config=_config(enabled=True),
+            sampling_params=_sampling(interpolate=True),
+        )
+
+
+def test_prepare_rejects_prepared_media_despite_pending_interpolation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The forged payload is the exact case the reviewer described: device
+    # postprocessing enabled plus frame_interpolation, but the media already being
+    # prepared. It must be rejected, not silently returned with interpolation dropped.
+    forged = DiffusionMediaOutput(
+        video=VideoMediaOutput(
+            tensor=torch.zeros(1, 3, 2, 2, 3, dtype=torch.float32),
+            spec=VideoTensorSpec(
+                layout=VideoTensorLayout.BCTHW,
+                encoding=VideoTensorEncoding.NORMALIZED_FLOAT,
+                value_range=VideoValueRange.NEGATIVE_ONE_TO_ONE,
+            ),
+        ),
+        prepared_for_transport=True,
+    )
+
+    with pytest.raises(ValueError, match="already prepared"):
+        prepare_diffusion_media_for_transport(
+            forged,
+            od_config=_config(enabled=True),
+            sampling_params=_sampling(interpolate=True),
+        )
+
+
+def test_request_owned_tensor_rejects_a_detached_storage_view() -> None:
+    # ``tensor._base is None`` is not proof of ownership: a detached slice keeps a
+    # nonzero storage offset and the whole source storage. Serializing it would
+    # leak every other request's pixels, so it must be cloned before transport.
+    source = torch.randn(4, 3, 2, 4, 5)
+    detached_slice = source[1:2].detach()
+    assert detached_slice.is_contiguous()
+    assert detached_slice._base is None
+    assert detached_slice.storage_offset() != 0
+
+    owned = ensure_request_owned_tensor(detached_slice)
+
+    assert owned.shape == detached_slice.shape
+    assert owned.storage_offset() == 0
+    assert owned.untyped_storage().nbytes() == owned.numel() * owned.element_size()
+    assert owned.untyped_storage().data_ptr() != source.untyped_storage().data_ptr()
+    torch.testing.assert_close(owned, detached_slice)
+
+
+def test_prepared_media_rejects_non_compact_request_storage() -> None:
+    # A zero-offset view of a bigger buffer is contiguous but not compact, so
+    # prepared transport must refuse it just as it refuses a storage view.
+    source = torch.randn(2, 3, 2, 4, 5)
+    zero_offset_view = source[0:1]
+    media = DiffusionMediaOutput(
+        video=VideoMediaOutput(
+            tensor=zero_offset_view,
+            spec=VideoTensorSpec(
+                layout=VideoTensorLayout.BCTHW,
+                encoding=VideoTensorEncoding.NORMALIZED_FLOAT,
+                value_range=VideoValueRange.NEGATIVE_ONE_TO_ONE,
+            ),
+        ),
+        prepared_for_transport=True,
+    )
+
+    with pytest.raises(ValueError, match="request-local storage"):
+        media.validate()

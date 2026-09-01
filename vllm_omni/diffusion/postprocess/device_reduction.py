@@ -64,7 +64,14 @@ def prepare_diffusion_media_for_transport(
     """Validate and prepare one request-local media output before D2H."""
     media.validate()
     if media.prepared_for_transport:
-        return media
+        # Only the model runner prepares media, exactly once, on media the
+        # pipeline emits unprepared. Accepting pre-prepared media here would let
+        # a pipeline forge runner-owned state and skip request policy (e.g. a
+        # forged uint8 payload silently bypasses frame interpolation).
+        raise ValueError(
+            "Media reached transport preparation already prepared; pipelines must "
+            "emit unprepared media so request policy is applied by the runner"
+        )
     if media.video.spec.encoding is not VideoTensorEncoding.NORMALIZED_FLOAT:
         raise ValueError("Pipelines must emit unprepared media as NORMALIZED_FLOAT video")
 
