@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import torch
 
+from tests.helpers.mark import hardware_marks
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig, VideoOutputTransportConfig
 from vllm_omni.diffusion.ipc import pack_diffusion_output_shm, unpack_diffusion_output_shm
 from vllm_omni.diffusion.media import (
@@ -24,7 +25,11 @@ from vllm_omni.diffusion.postprocess.media import finalize_diffusion_media
 from vllm_omni.entrypoints.openai.video_api_utils import _coerce_video_to_uint8_frames
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
-pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.gpu]
+pytestmark = [
+    pytest.mark.core_model,
+    pytest.mark.diffusion,
+    *hardware_marks(res={"cuda": "L4"}, num_cards=1),
+]
 
 _GPU = torch.accelerator.is_available() if hasattr(torch, "accelerator") else torch.cuda.is_available()
 requires_gpu = pytest.mark.skipif(not _GPU, reason="device reduction is a GPU path")
@@ -155,3 +160,55 @@ def test_wan_float_media_finalization_matches_the_legacy_path() -> None:
 
     assert prepared.video.spec.encoding is VideoTensorEncoding.NORMALIZED_FLOAT
     np.testing.assert_array_equal(produced["payload"]["video"], expected["payload"]["video"])
+
+
+@requires_gpu
+def test_oom_fallback_media_packs_without_device_widening(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression: when the fp32 reduction OOMs, the fallback keeps the bf16 float
+    # payload. Async IPC must copy it to the host in bf16 and widen on the CPU;
+    # a second device-side fp32 conversion would OOM again and drop the payload.
+    from vllm_omni.diffusion.postprocess import device_reduction
+
+    # Large enough (> 1 MB in bf16) that packing routes the tensor through the
+    # shared-memory D2H path rather than the small-tensor CPU copy.
+    video = torch.rand(1, 3, 16, 128, 128, device="cuda:0", dtype=torch.bfloat16) * 2 - 1
+
+    def _raise_oom(*_args: object, **_kwargs: object) -> torch.Tensor:
+        raise torch.OutOfMemoryError("forced fp32 reduction OOM")
+
+    monkeypatch.setattr(device_reduction, "reduce_video_to_uint8_frames", _raise_oom)
+
+    prepared = prepare_diffusion_media_for_transport(
+        _decoded_wan_video(video),
+        od_config=_config(enabled=True),
+        sampling_params=OmniDiffusionSamplingParams(output_type="np"),
+    )
+    assert prepared.video.spec.encoding is VideoTensorEncoding.NORMALIZED_FLOAT
+    assert prepared.video.tensor.dtype == torch.bfloat16
+
+    output = DiffusionOutput(media=prepared)
+
+    pinned_dtypes: list[torch.dtype] = []
+    real_empty = torch.empty
+
+    def _spy_empty(*args: object, **kwargs: object) -> torch.Tensor:
+        tensor = real_empty(*args, **kwargs)
+        if kwargs.get("pin_memory"):
+            pinned_dtypes.append(tensor.dtype)
+        return tensor
+
+    monkeypatch.setattr(torch, "empty", _spy_empty)
+
+    d2h_stream = torch.Stream(device=torch.device("cuda", 0))
+    pack_diffusion_output_shm(output, d2h_stream=d2h_stream)
+    d2h_stream.synchronize()
+
+    assert pinned_dtypes == [torch.bfloat16], (
+        "async packing must D2H in the original dtype and widen on the CPU, "
+        "never widen bf16 to fp32 on the accelerator before the copy"
+    )
+
+    unpack_diffusion_output_shm(output)
+    assert isinstance(output.media, DiffusionMediaOutput)
+    assert output.media.video.tensor.dtype == torch.bfloat16
+    torch.testing.assert_close(output.media.video.tensor, video.cpu())

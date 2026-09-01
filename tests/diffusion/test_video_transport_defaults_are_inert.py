@@ -34,9 +34,14 @@ def test_wan_uses_the_typed_media_contract() -> None:
     source = (Path(inspect.getfile(models_pkg)).parent / "wan2_2/pipeline_wan2_2.py").read_text()
     assert "DiffusionMediaOutput(" in source
     assert "reduce_video_to_uint8_frames(" not in source
-    assert "WanPipeline" not in _DIFFUSION_POST_PROCESS_FUNCS
-    assert "WanDMDPipeline" not in _DIFFUSION_POST_PROCESS_FUNCS
-    assert "WanT2VDMD2Pipeline" not in _DIFFUSION_POST_PROCESS_FUNCS
+    # The migrated built-in WAN pipeline emits typed media, so it never invokes
+    # the legacy postprocess hook. The mappings are intentionally retained so
+    # legacy/out-of-tree WAN replacements (registered with
+    # post_process_func_name=None) keep the built-in hook instead of exposing raw
+    # BCTHW tensors.
+    assert _DIFFUSION_POST_PROCESS_FUNCS["WanPipeline"] == "get_wan22_post_process_func"
+    assert _DIFFUSION_POST_PROCESS_FUNCS["WanDMDPipeline"] == "get_wan22_post_process_func"
+    assert _DIFFUSION_POST_PROCESS_FUNCS["WanT2VDMD2Pipeline"] == "get_wan22_post_process_func"
 
 
 def test_non_reference_models_do_not_use_the_runtime_reducer() -> None:

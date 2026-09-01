@@ -13,9 +13,14 @@ import numpy as np
 import pytest
 import torch
 
+from tests.helpers.mark import hardware_marks
 from vllm_omni.diffusion.postprocess.device_reduction import reduce_video_to_uint8_frames
 
-pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.gpu]
+pytestmark = [
+    pytest.mark.core_model,
+    pytest.mark.diffusion,
+    *hardware_marks(res={"cuda": "L4"}, num_cards=1),
+]
 
 _GPU = torch.accelerator.is_available() if hasattr(torch, "accelerator") else torch.cuda.is_available()
 requires_gpu = pytest.mark.skipif(not _GPU, reason="device reduction is a GPU path")

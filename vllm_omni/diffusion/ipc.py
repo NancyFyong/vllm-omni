@@ -94,14 +94,17 @@ def _tensor_to_shm(
         torch.accelerator.set_stream(d2h_stream)
         try:
             t = tensor.detach()
-            if original_dtype == torch.bfloat16:
-                t = t.to(torch.float32)
             cpu = torch.empty(t.shape, dtype=t.dtype, pin_memory=True)
             cpu.copy_(t, non_blocking=True)
         finally:
             torch.accelerator.set_stream(old_stream)
         d2h_stream.synchronize()
         tensor = cpu
+        # numpy has no bfloat16, so widen on the host after D2H. Never widen on
+        # the accelerator before the copy: a payload that already fell back after
+        # an fp32 OOM would OOM again on a second device-side fp32 allocation.
+        if original_dtype == torch.bfloat16:
+            tensor = tensor.to(torch.float32)
     else:
         tensor = tensor.detach().cpu().contiguous()
         if original_dtype == torch.bfloat16:
