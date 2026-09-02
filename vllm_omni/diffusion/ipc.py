@@ -317,6 +317,7 @@ def _pack_diffusion_fields(
     output: DiffusionOutput,
     d2h_stream: torch.Stream | None = None,
     created: list[dict[str, Any]] | None = None,
+    pending_updates: list[tuple[DiffusionOutput, str, object]] | None = None,
 ) -> DiffusionOutput:
     if output.media is not None and output.output is not None:
         raise ValueError("DiffusionOutput cannot contain both media and legacy output")
@@ -342,16 +343,22 @@ def _pack_diffusion_fields(
     if isinstance(output.trajectory_log_probs, torch.Tensor):
         packed_log_probs = _pack_tensor_if_large(output.trajectory_log_probs, d2h_stream=d2h_stream, created=created)
 
-    if packed_output is not _UNSET:
-        output.output = packed_output
-    if packed_media is not _UNSET:
-        output.media = packed_media  # type: ignore[assignment]
-    if packed_latents is not _UNSET:
-        output.trajectory_latents = packed_latents
-    if packed_timesteps is not _UNSET:
-        output.trajectory_timesteps = packed_timesteps
-    if packed_log_probs is not _UNSET:
-        output.trajectory_log_probs = packed_log_probs
+    updates = [
+        (output, field_name, value)
+        for field_name, value in (
+            ("output", packed_output),
+            ("media", packed_media),
+            ("trajectory_latents", packed_latents),
+            ("trajectory_timesteps", packed_timesteps),
+            ("trajectory_log_probs", packed_log_probs),
+        )
+        if value is not _UNSET
+    ]
+    if pending_updates is None:
+        for target, field_name, value in updates:
+            setattr(target, field_name, value)
+    else:
+        pending_updates.extend(updates)
     return output
 
 
@@ -375,15 +382,27 @@ def pack_diffusion_output_shm(
     the default stream).  The caller must synchronize *d2h_stream* afterward.
 
     Packing is failure-atomic: every SHM segment created during the call is
-    tracked and unlinked if any part of the payload fails to pack, so a partial
-    error never leaks a shared-memory segment.
+    tracked and unlinked if any part of the payload fails to pack, and field
+    mutations are committed only after the complete payload succeeds.
     """
     created: list[dict[str, Any]] = []
+    pending_updates: list[tuple[DiffusionOutput, str, object]] = []
     try:
-        return _pack_output_shm(output, d2h_stream=d2h_stream, created=created)
+        packed = _pack_output_shm(
+            output,
+            d2h_stream=d2h_stream,
+            created=created,
+            pending_updates=pending_updates,
+        )
     except BaseException:
         _unlink_shm_handles(created)
         raise
+
+    # Commit mutations only after every field and batch entry packed. Until
+    # this point, a failure leaves the complete caller-owned payload untouched.
+    for target, field_name, value in pending_updates:
+        setattr(target, field_name, value)
+    return packed
 
 
 def payload_carries_typed_media(output: object) -> bool:
@@ -417,30 +436,55 @@ def _pack_output_shm(
     *,
     d2h_stream: torch.Stream | None,
     created: list[dict[str, Any]],
+    pending_updates: list[tuple[DiffusionOutput, str, object]],
 ) -> object:
     if isinstance(output, DiffusionOutput):
-        return _pack_diffusion_fields(output, d2h_stream=d2h_stream, created=created)
+        return _pack_diffusion_fields(
+            output,
+            d2h_stream=d2h_stream,
+            created=created,
+            pending_updates=pending_updates,
+        )
 
     # DP multi-concurrency: {"dp_rank": int, "output": DiffusionOutput}
     if isinstance(output, dict) and "dp_rank" in output and "output" in output:
         inner = output["output"]
         if isinstance(inner, DiffusionOutput):
-            output["output"] = _pack_diffusion_fields(inner, d2h_stream=d2h_stream, created=created)
+            _pack_diffusion_fields(
+                inner,
+                d2h_stream=d2h_stream,
+                created=created,
+                pending_updates=pending_updates,
+            )
         return output
 
     if _is_rpc_result_envelope(output):
-        result = output.get("result")
-        output["result"] = _pack_output_shm(result, d2h_stream=d2h_stream, created=created)
+        _pack_output_shm(
+            output.get("result"),
+            d2h_stream=d2h_stream,
+            created=created,
+            pending_updates=pending_updates,
+        )
         return output
 
     result = getattr(output, "result", None)
     if isinstance(result, DiffusionOutput):
-        output.result = _pack_diffusion_fields(result, d2h_stream=d2h_stream, created=created)
+        _pack_diffusion_fields(
+            result,
+            d2h_stream=d2h_stream,
+            created=created,
+            pending_updates=pending_updates,
+        )
 
     runner_outputs = getattr(output, "runner_outputs", None)
     if isinstance(runner_outputs, list):
         for runner_output in runner_outputs:
-            _pack_output_shm(runner_output, d2h_stream=d2h_stream, created=created)
+            _pack_output_shm(
+                runner_output,
+                d2h_stream=d2h_stream,
+                created=created,
+                pending_updates=pending_updates,
+            )
     return output
 
 

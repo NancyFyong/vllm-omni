@@ -223,23 +223,33 @@ def test_oom_fallback_recovers_the_allocator(monkeypatch: pytest.MonkeyPatch) ->
     # than injecting the exception, which never poisons the allocator.
     from vllm_omni.platforms import current_omni_platform
 
-    video = torch.rand(1, 3, 16, 128, 128, device="cuda:0", dtype=torch.bfloat16) * 2 - 1
+    video = torch.empty(1, 3, 16, 128, 128, device="cuda:0", dtype=torch.bfloat16)
+    video.uniform_(-1.0, 1.0)
+    expected = video.cpu()
+    d2h_stream = torch.Stream(device=video.device)
     base_bytes = video.numel() * video.element_size()
-    free, total = current_omni_platform.get_device_memory()
+    _free, total = current_omni_platform.get_device_memory()
 
     # Cap the process so the fp32 conversion (2x base bytes) cannot fit, while
-    # the 1.2x base bf16 path still can — a real allocator OOM at the .to(fp32).
+    # retaining the original bf16 tensor. This forces a real allocator OOM at
+    # the .to(fp32), rather than injecting an exception from a monkeypatch.
     torch.cuda.set_per_process_memory_fraction(min(0.99, (1.2 * base_bytes) / total))
+    real_empty_cache = current_omni_platform.empty_cache
+    real_synchronize = current_omni_platform.synchronize
     try:
         empty_calls: list[int] = []
         sync_calls: list[bool] = []
 
-        monkeypatch.setattr(
-            current_omni_platform,
-            "empty_cache",
-            lambda: empty_calls.append(torch.accelerator.current_device_index()),
-        )
-        monkeypatch.setattr(current_omni_platform, "synchronize", lambda: sync_calls.append(True))
+        def _empty_cache() -> None:
+            real_empty_cache()
+            empty_calls.append(torch.accelerator.current_device_index())
+
+        def _synchronize() -> None:
+            real_synchronize()
+            sync_calls.append(True)
+
+        monkeypatch.setattr(current_omni_platform, "empty_cache", _empty_cache)
+        monkeypatch.setattr(current_omni_platform, "synchronize", _synchronize)
 
         prepared = prepare_diffusion_media_for_transport(
             _decoded_wan_video(video),
@@ -250,14 +260,18 @@ def test_oom_fallback_recovers_the_allocator(monkeypatch: pytest.MonkeyPatch) ->
         # The fallback ran past a genuine OOM and kept the bf16 float payload.
         assert prepared.video.spec.encoding is VideoTensorEncoding.NORMALIZED_FLOAT
         assert prepared.video.tensor.dtype == torch.bfloat16
-        # The allocator must have been released/drained by the fallback.
         assert empty_calls, "fallback must empty the CUDA allocator cache after a real OOM"
         assert sync_calls, "fallback must drain the device after a real OOM"
 
-        # And a subsequent allocation of the same working set must now succeed.
-        probe = torch.empty(base_bytes // 2, device="cuda:0", dtype=torch.bfloat16)
-        assert probe.numel() > 0
+        # Exercise the next production step: async D2H/SHM packing of the same
+        # tensor must succeed after allocator recovery and preserve its values.
+        output = DiffusionOutput(media=prepared)
+        pack_diffusion_output_shm(output, d2h_stream=d2h_stream)
+        d2h_stream.synchronize()
+        unpack_diffusion_output_shm(output)
+        assert isinstance(output.media, DiffusionMediaOutput)
+        torch.testing.assert_close(output.media.video.tensor, expected)
     finally:
         torch.cuda.set_per_process_memory_fraction(1.0)
-        current_omni_platform.empty_cache()
-        current_omni_platform.synchronize()
+        real_empty_cache()
+        real_synchronize()

@@ -401,7 +401,7 @@ def test_frame_interpolation_clamps_zero_to_one_overshoot(
     # clamped to [0,1] before RIFE and interpolated as [0,1]. Without the clamp
     # the interpolator classifies it as [-1,1] (amax > 1) and returns the wrong
     # space, which is then written back with no *2-1 restore.
-    video = torch.full((1, 3, 2, 3, 3), 0.25, dtype=torch.float32)
+    video = torch.full((1, 3, 2, 3, 3), 0.25, dtype=torch.bfloat16)
     video[0, 0, 0, 0, 0] = 1.25  # single overshoot > 1 -> amax > 1
     media = DiffusionMediaOutput(
         video=VideoMediaOutput(
@@ -422,7 +422,7 @@ def test_frame_interpolation_clamps_zero_to_one_overshoot(
 
     def _square_interpolator(tensor: torch.Tensor, **_kwargs: object) -> tuple[torch.Tensor, float]:
         seen.append(tensor)
-        return tensor * tensor, 2.0
+        return tensor.float().square(), 2.0
 
     monkeypatch.setattr(media_postprocess, "interpolate_video_tensor", _square_interpolator)
 
@@ -431,11 +431,12 @@ def test_frame_interpolation_clamps_zero_to_one_overshoot(
         sampling_params=OmniDiffusionSamplingParams(output_type="np", enable_frame_interpolation=True),
     )
 
-    # The interpolator is fed the clamped unit-range tensor (max now 1.0), not
-    # the raw 1.25 overshoot that would be mis-read as [-1,1].
+    # The interpolator is fed the clamped bf16 unit-range tensor (max now 1.0),
+    # not the raw 1.25 overshoot that would be misread as [-1,1].
     assert len(seen) == 1
-    assert seen[0].min() == pytest.approx(0.25, abs=1e-6)
-    assert seen[0].max() == pytest.approx(1.0, abs=1e-6)
+    assert seen[0].dtype is torch.bfloat16
+    assert float(seen[0].min()) == pytest.approx(0.25, abs=1e-6)
+    assert float(seen[0].max()) == pytest.approx(1.0, abs=1e-6)
     # Squaring the clamped values gives 0.0625 at the 0.25 samples and 1.0 at the
     # overshoot; the overall shape is unchanged (no *2-1 for ZERO_TO_ONE).
     frames = output["payload"]["video"]
@@ -465,13 +466,14 @@ def test_packing_failure_unlinks_created_segments_and_leaves_output_untouched(
     original_latents = output.trajectory_latents
 
     real_array_to_shm = diffusion_ipc._array_to_shm
-    calls: list[str] = []
+    created_handles: list[dict[str, object]] = []
 
     def _fail_on_second(array: np.ndarray) -> dict[str, object]:
-        calls.append("called")
-        if len(calls) >= 2:
+        if created_handles:
             raise RuntimeError("injected packing failure")
-        return real_array_to_shm(array)
+        handle = real_array_to_shm(array)
+        created_handles.append(handle)
+        return handle
 
     monkeypatch.setattr(diffusion_ipc, "_SHM_TENSOR_THRESHOLD", 1)
     monkeypatch.setattr(diffusion_ipc, "_array_to_shm", _fail_on_second)
@@ -479,8 +481,66 @@ def test_packing_failure_unlinks_created_segments_and_leaves_output_untouched(
     with pytest.raises(RuntimeError, match="injected packing failure"):
         pack_diffusion_output_shm(output)
 
-    assert calls, "no SHM segment was created before the injected failure"
+    assert created_handles, "no SHM segment was created before the injected failure"
     # Output was not mutated despite the media segment being created first.
     assert output.media is original_media
     assert isinstance(output.media, DiffusionMediaOutput)
     assert output.trajectory_latents is original_latents
+
+    from multiprocessing import shared_memory
+
+    with pytest.raises(FileNotFoundError):
+        shared_memory.SharedMemory(name=str(created_handles[0]["name"]))
+
+
+def test_second_batch_entry_failure_leaves_the_whole_batch_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from multiprocessing import shared_memory
+
+    from vllm_omni.diffusion.worker.utils import BatchRunnerOutput, RunnerOutput
+
+    first_media = _prepared_media(
+        _video(
+            torch.zeros(1, 3, 2, 4, 5),
+            encoding=VideoTensorEncoding.NORMALIZED_FLOAT,
+            value_range=VideoValueRange.NEGATIVE_ONE_TO_ONE,
+        )
+    )
+    second_media = _prepared_media(
+        _video(
+            torch.ones(1, 3, 2, 4, 5),
+            encoding=VideoTensorEncoding.NORMALIZED_FLOAT,
+            value_range=VideoValueRange.NEGATIVE_ONE_TO_ONE,
+        )
+    )
+    first = DiffusionOutput(media=first_media)
+    second = DiffusionOutput(media=second_media)
+    batch = BatchRunnerOutput(
+        runner_outputs=[
+            RunnerOutput(request_id="first", result=first),
+            RunnerOutput(request_id="second", result=second),
+        ]
+    )
+
+    real_array_to_shm = diffusion_ipc._array_to_shm
+    created_handles: list[dict[str, object]] = []
+
+    def _fail_on_second(array: np.ndarray) -> dict[str, object]:
+        if created_handles:
+            raise RuntimeError("second batch entry failed")
+        handle = real_array_to_shm(array)
+        created_handles.append(handle)
+        return handle
+
+    monkeypatch.setattr(diffusion_ipc, "_SHM_TENSOR_THRESHOLD", 1)
+    monkeypatch.setattr(diffusion_ipc, "_array_to_shm", _fail_on_second)
+
+    with pytest.raises(RuntimeError, match="second batch entry failed"):
+        pack_diffusion_output_shm(batch)
+
+    # No per-entry assignment is committed until every entry has packed.
+    assert first.media is first_media
+    assert second.media is second_media
+    with pytest.raises(FileNotFoundError):
+        shared_memory.SharedMemory(name=str(created_handles[0]["name"]))
