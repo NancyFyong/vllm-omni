@@ -393,6 +393,56 @@ def test_frame_interpolation_uses_the_declared_range_zero_to_one(
     assert np.allclose(np.asarray(frames), 0.0625, atol=1e-6)
 
 
+def test_frame_interpolation_clamps_zero_to_one_overshoot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A declared [0,1] clip whose sample is almost entirely inside [0,1] — but
+    # with one bf16 value overshooting 1 — is still in unit space, so it must be
+    # clamped to [0,1] before RIFE and interpolated as [0,1]. Without the clamp
+    # the interpolator classifies it as [-1,1] (amax > 1) and returns the wrong
+    # space, which is then written back with no *2-1 restore.
+    video = torch.full((1, 3, 2, 3, 3), 0.25, dtype=torch.float32)
+    video[0, 0, 0, 0, 0] = 1.25  # single overshoot > 1 -> amax > 1
+    media = DiffusionMediaOutput(
+        video=VideoMediaOutput(
+            tensor=video,
+            spec=VideoTensorSpec(
+                layout=VideoTensorLayout.BCTHW,
+                encoding=VideoTensorEncoding.NORMALIZED_FLOAT,
+                value_range=VideoValueRange.ZERO_TO_ONE,
+            ),
+            constraints=VideoTransportConstraints(
+                pending_float_consumers=frozenset({FloatVideoConsumer.FRAME_INTERPOLATION})
+            ),
+        ),
+        prepared_for_transport=True,
+    )
+
+    seen: list[torch.Tensor] = []
+
+    def _square_interpolator(tensor: torch.Tensor, **_kwargs: object) -> tuple[torch.Tensor, float]:
+        seen.append(tensor)
+        return tensor * tensor, 2.0
+
+    monkeypatch.setattr(media_postprocess, "interpolate_video_tensor", _square_interpolator)
+
+    output = finalize_diffusion_media(
+        media,
+        sampling_params=OmniDiffusionSamplingParams(output_type="np", enable_frame_interpolation=True),
+    )
+
+    # The interpolator is fed the clamped unit-range tensor (max now 1.0), not
+    # the raw 1.25 overshoot that would be mis-read as [-1,1].
+    assert len(seen) == 1
+    assert seen[0].min() == pytest.approx(0.25, abs=1e-6)
+    assert seen[0].max() == pytest.approx(1.0, abs=1e-6)
+    # Squaring the clamped values gives 0.0625 at the 0.25 samples and 1.0 at the
+    # overshoot; the overall shape is unchanged (no *2-1 for ZERO_TO_ONE).
+    frames = output["payload"]["video"]
+    assert np.allclose(np.asarray(frames).reshape(-1)[1:], 0.0625, atol=1e-6)
+    assert np.isclose(float(np.asarray(frames).reshape(-1)[0]), 1.0, atol=1e-6)
+
+
 def test_packing_failure_unlinks_created_segments_and_leaves_output_untouched(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

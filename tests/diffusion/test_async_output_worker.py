@@ -15,6 +15,7 @@ from vllm_omni.diffusion.data import (
     DiffusionOutput,
     OmniACK,
 )
+from vllm_omni.diffusion.media import DiffusionMediaOutput
 from vllm_omni.diffusion.worker.diffusion_worker import WorkerProc
 from vllm_omni.diffusion.worker.utils import BatchRunnerOutput, RunnerOutput
 
@@ -194,6 +195,37 @@ class TestReturnResultSyncPath:
             proc._return_result(DiffusionOutput())
 
         proc.result_mq.enqueue.assert_not_called()
+
+    def test_media_packing_memory_failure_is_reraiset_for_typed_media(self, mocker):
+        """A non-ValueError packing failure on typed media must re-raise, not
+        swallow it and enqueue a half-packed payload."""
+        proc = _make_worker_proc(step_execution=True)
+        proc._async_output_queue = None
+        mocker.patch(
+            "vllm_omni.diffusion.worker.diffusion_worker.pack_diffusion_output_shm",
+            side_effect=RuntimeError("SHM pack out of memory"),
+        )
+
+        output = DiffusionOutput(media=MagicMock(spec=DiffusionMediaOutput))
+        with pytest.raises(RuntimeError, match="SHM pack out of memory"):
+            proc._return_result(output)
+
+        proc.result_mq.enqueue.assert_not_called()
+
+    def test_legacy_output_packing_failure_is_still_swallowed(self, mocker):
+        """Non-typed (legacy output) failures keep the historic swallow-and-
+        enqueue behavior; only typed media re-raises."""
+        proc = _make_worker_proc(step_execution=True)
+        proc._async_output_queue = None
+        mocker.patch(
+            "vllm_omni.diffusion.worker.diffusion_worker.pack_diffusion_output_shm",
+            side_effect=RuntimeError("SHM pack out of memory"),
+        )
+
+        proc._return_result(DiffusionOutput(output="data"))
+
+        # Legacy path: warning logged, output still enqueued once.
+        proc.result_mq.enqueue.assert_called_once_with(DiffusionOutput(output="data"))
 
     def test_non_diffusion_output_skips_async_in_request_mode(self, mocker):
         """Non-DiffusionOutput/BatchRunnerOutput in request mode uses sync path."""

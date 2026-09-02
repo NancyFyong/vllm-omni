@@ -22,6 +22,7 @@ from vllm_omni.diffusion.media import (
     ensure_request_owned_tensor,
 )
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
+from vllm_omni.platforms import current_omni_platform
 
 # VaeImageProcessor.denormalize: (x * 0.5 + 0.5).clamp(0, 1)
 _DENORM_SCALE = 0.5
@@ -99,7 +100,13 @@ def prepare_diffusion_media_for_transport(
             do_denormalize=constrained_video.spec.value_range is VideoValueRange.NEGATIVE_ONE_TO_ONE,
         )
     except torch.OutOfMemoryError:
+        # A real float32 OOM leaves the caching allocator in a failed state until
+        # the cache is released (and the device drained). The very next step is
+        # the worker D2H of this same tensor, so recover the allocator here
+        # before handing back the float representation as transport-ready.
         logger.warning("Device video preparation ran out of memory; using normalized float transport")
+        current_omni_platform.empty_cache()
+        current_omni_platform.synchronize()
         return _prepare_float_media_for_transport(media, constrained_video)
     prepared_video = replace(
         constrained_video,

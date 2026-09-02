@@ -386,6 +386,32 @@ def pack_diffusion_output_shm(
         raise
 
 
+def payload_carries_typed_media(output: object) -> bool:
+    """True if *output* carries any typed ``DiffusionOutput.media`` payload.
+
+    Mirrors the packing dispatch so callers can decide to re-raise a packing
+    failure (leaving the media unprepared/on device) instead of enqueueing a
+    broken payload, which only matters for typed media.
+    """
+    if isinstance(output, DiffusionOutput):
+        return output.media is not None
+
+    if isinstance(output, dict) and "dp_rank" in output and "output" in output:
+        return payload_carries_typed_media(output.get("output"))
+
+    if _is_rpc_result_envelope(output):
+        return payload_carries_typed_media(output.get("result"))
+
+    result = getattr(output, "result", None)
+    if isinstance(result, DiffusionOutput) and result.media is not None:
+        return True
+
+    runner_outputs = getattr(output, "runner_outputs", None)
+    if isinstance(runner_outputs, list):
+        return any(payload_carries_typed_media(item) for item in runner_outputs)
+    return False
+
+
 def _pack_output_shm(
     output: object,
     *,
