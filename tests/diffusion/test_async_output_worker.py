@@ -221,6 +221,22 @@ class TestReturnResultSyncPath:
 
         proc.result_mq.enqueue.assert_not_called()
 
+    def test_media_packing_failure_is_reraised_for_dp_container(self, mocker):
+        """Container dispatch and typed-media failure detection share a walker."""
+        proc = _make_worker_proc(step_execution=True)
+        proc._async_output_queue = None
+        mocker.patch(
+            "vllm_omni.diffusion.worker.diffusion_worker.pack_diffusion_output_shm",
+            side_effect=RuntimeError("SHM pack out of memory"),
+        )
+
+        output = DiffusionOutput(media=MagicMock(spec=DiffusionMediaOutput))
+        tagged_output = {"dp_rank": 0, "output": output}
+        with pytest.raises(RuntimeError, match="SHM pack out of memory"):
+            proc._return_result(tagged_output)
+
+        proc.result_mq.enqueue.assert_not_called()
+
     def test_legacy_output_packing_failure_is_still_swallowed(self, mocker):
         """Non-typed (legacy output) failures keep the historic swallow-and-
         enqueue behavior; only typed media re-raises."""

@@ -100,31 +100,33 @@ def prepare_diffusion_media_for_transport(
             do_denormalize=constrained_video.spec.value_range is VideoValueRange.NEGATIVE_ONE_TO_ONE,
         )
     except torch.OutOfMemoryError:
-        # A real float32 OOM leaves the caching allocator in a failed state until
-        # the cache is released (and the device drained). The very next step is
-        # the worker D2H of this same tensor, so recover the allocator here
-        # before handing back the float representation as transport-ready.
         logger.warning("Device video preparation ran out of memory; using normalized float transport")
-        current_omni_platform.empty_cache()
-        current_omni_platform.synchronize()
-        return _prepare_float_media_for_transport(media, constrained_video)
-    prepared_video = replace(
-        constrained_video,
-        tensor=frames,
-        spec=VideoTensorSpec(
-            layout=VideoTensorLayout.BTHWC,
-            encoding=VideoTensorEncoding.UINT8_FRAMES,
-            value_range=VideoValueRange.ZERO_TO_255,
-        ),
-        constraints=VideoTransportConstraints(),
-    )
-    prepared = replace(media, video=prepared_video, prepared_for_transport=True)
-    prepared.validate()
-    logger.debug(
-        "Device video preparation converted normalized float to uint8: shape=%s",
-        tuple(frames.shape),
-    )
-    return prepared
+    else:
+        prepared_video = replace(
+            constrained_video,
+            tensor=frames,
+            spec=VideoTensorSpec(
+                layout=VideoTensorLayout.BTHWC,
+                encoding=VideoTensorEncoding.UINT8_FRAMES,
+                value_range=VideoValueRange.ZERO_TO_255,
+            ),
+            constraints=VideoTransportConstraints(),
+        )
+        prepared = replace(media, video=prepared_video, prepared_for_transport=True)
+        prepared.validate()
+        logger.debug(
+            "Device video preparation converted normalized float to uint8: shape=%s",
+            tuple(frames.shape),
+        )
+        return prepared
+
+    # Leave the exception handler before allocator cleanup and fallback
+    # construction. A late conversion OOM otherwise keeps the helper traceback
+    # (and its live float32 intermediates) reachable while the fallback may need
+    # to clone a non-compact request view.
+    current_omni_platform.empty_cache()
+    current_omni_platform.synchronize()
+    return _prepare_float_media_for_transport(media, constrained_video)
 
 
 def reduce_video_to_uint8_frames(video: torch.Tensor, *, do_denormalize: bool = True) -> torch.Tensor:

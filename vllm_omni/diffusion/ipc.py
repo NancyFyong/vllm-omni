@@ -11,6 +11,7 @@ serialised through the queue.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -405,30 +406,36 @@ def pack_diffusion_output_shm(
     return packed
 
 
-def payload_carries_typed_media(output: object) -> bool:
-    """True if *output* carries any typed ``DiffusionOutput.media`` payload.
-
-    Mirrors the packing dispatch so callers can decide to re-raise a packing
-    failure (leaving the media unprepared/on device) instead of enqueueing a
-    broken payload, which only matters for typed media.
-    """
+def _iter_diffusion_outputs(output: object) -> Iterator[DiffusionOutput]:
+    """Yield every packable ``DiffusionOutput`` leaf in a worker payload."""
     if isinstance(output, DiffusionOutput):
-        return output.media is not None
+        yield output
+        return
 
+    # DP multi-concurrency: {"dp_rank": int, "output": DiffusionOutput}
     if isinstance(output, dict) and "dp_rank" in output and "output" in output:
-        return payload_carries_typed_media(output.get("output"))
+        inner = output["output"]
+        if isinstance(inner, DiffusionOutput):
+            yield inner
+        return
 
     if _is_rpc_result_envelope(output):
-        return payload_carries_typed_media(output.get("result"))
+        yield from _iter_diffusion_outputs(output.get("result"))
+        return
 
     result = getattr(output, "result", None)
-    if isinstance(result, DiffusionOutput) and result.media is not None:
-        return True
+    if isinstance(result, DiffusionOutput):
+        yield result
 
     runner_outputs = getattr(output, "runner_outputs", None)
     if isinstance(runner_outputs, list):
-        return any(payload_carries_typed_media(item) for item in runner_outputs)
-    return False
+        for runner_output in runner_outputs:
+            yield from _iter_diffusion_outputs(runner_output)
+
+
+def payload_carries_typed_media(output: object) -> bool:
+    """True if *output* carries any typed ``DiffusionOutput.media`` payload."""
+    return any(item.media is not None for item in _iter_diffusion_outputs(output))
 
 
 def _pack_output_shm(
@@ -438,53 +445,13 @@ def _pack_output_shm(
     created: list[dict[str, Any]],
     pending_updates: list[tuple[DiffusionOutput, str, object]],
 ) -> object:
-    if isinstance(output, DiffusionOutput):
-        return _pack_diffusion_fields(
-            output,
-            d2h_stream=d2h_stream,
-            created=created,
-            pending_updates=pending_updates,
-        )
-
-    # DP multi-concurrency: {"dp_rank": int, "output": DiffusionOutput}
-    if isinstance(output, dict) and "dp_rank" in output and "output" in output:
-        inner = output["output"]
-        if isinstance(inner, DiffusionOutput):
-            _pack_diffusion_fields(
-                inner,
-                d2h_stream=d2h_stream,
-                created=created,
-                pending_updates=pending_updates,
-            )
-        return output
-
-    if _is_rpc_result_envelope(output):
-        _pack_output_shm(
-            output.get("result"),
-            d2h_stream=d2h_stream,
-            created=created,
-            pending_updates=pending_updates,
-        )
-        return output
-
-    result = getattr(output, "result", None)
-    if isinstance(result, DiffusionOutput):
+    for item in _iter_diffusion_outputs(output):
         _pack_diffusion_fields(
-            result,
+            item,
             d2h_stream=d2h_stream,
             created=created,
             pending_updates=pending_updates,
         )
-
-    runner_outputs = getattr(output, "runner_outputs", None)
-    if isinstance(runner_outputs, list):
-        for runner_output in runner_outputs:
-            _pack_output_shm(
-                runner_output,
-                d2h_stream=d2h_stream,
-                created=created,
-                pending_updates=pending_updates,
-            )
     return output
 
 

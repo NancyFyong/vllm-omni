@@ -275,3 +275,74 @@ def test_oom_fallback_recovers_the_allocator(monkeypatch: pytest.MonkeyPatch) ->
         torch.cuda.set_per_process_memory_fraction(1.0)
         real_empty_cache()
         real_synchronize()
+
+
+@requires_gpu
+def test_oom_fallback_releases_late_uint8_traceback_before_clone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A final uint8 allocation OOM must release float intermediates first."""
+    from vllm_omni.diffusion.postprocess import device_reduction
+    from vllm_omni.platforms import current_omni_platform
+
+    # A split request is a non-compact view, so float fallback must allocate a
+    # request-owned clone after reduction fails.
+    backing = torch.empty(2, 3, 16, 128, 128, device="cuda:0", dtype=torch.bfloat16)
+    backing.uniform_(-1.0, 1.0)
+    video = backing[1:2].detach()
+    expected = video.cpu()
+    _, total = current_omni_platform.get_device_memory()
+    real_to = torch.Tensor.to
+    real_empty_cache = current_omni_platform.empty_cache
+    real_synchronize = current_omni_platform.synchronize
+    real_ensure_request_owned = device_reduction.ensure_request_owned_tensor
+    uint8_attempts: list[int] = []
+    fallback_allocations: list[int] = []
+
+    def _record_fallback_allocation(tensor: torch.Tensor) -> torch.Tensor:
+        fallback_allocations.append(torch.accelerator.memory_allocated(tensor.device))
+        return real_ensure_request_owned(tensor)
+
+    def _fail_real_uint8_allocation(
+        tensor: torch.Tensor,
+        *args: object,
+        **kwargs: object,
+    ) -> torch.Tensor:
+        dtype = kwargs.get("dtype")
+        if dtype is None and args and isinstance(args[0], torch.dtype):
+            dtype = args[0]
+        if tensor.is_cuda and dtype is torch.uint8:
+            # Earlier float32 work runs without a cap. Immediately before the
+            # real final uint8 allocation, cap the allocator below that request
+            # but above the post-unwind request-owned bf16 clone requirement.
+            real_empty_cache()
+            allocated = torch.accelerator.memory_allocated(tensor.device)
+            uint8_bytes = tensor.numel()
+            limit_bytes = allocated + max(1, uint8_bytes // 2)
+            torch.cuda.set_per_process_memory_fraction(min(0.99, limit_bytes / total))
+            uint8_attempts.append(allocated)
+        return real_to(tensor, *args, **kwargs)
+
+    monkeypatch.setattr(device_reduction, "ensure_request_owned_tensor", _record_fallback_allocation)
+    monkeypatch.setattr(torch.Tensor, "to", _fail_real_uint8_allocation)
+    try:
+        prepared = prepare_diffusion_media_for_transport(
+            _decoded_wan_video(video),
+            od_config=_config(enabled=True),
+            sampling_params=OmniDiffusionSamplingParams(output_type="np"),
+        )
+
+        assert uint8_attempts, "the real final .to(uint8) allocation was not attempted"
+        assert fallback_allocations, "float fallback did not request compact storage"
+        assert fallback_allocations[0] < uint8_attempts[0], (
+            "the failed reduction's float intermediates remained live during fallback"
+        )
+        assert prepared.video.spec.encoding is VideoTensorEncoding.NORMALIZED_FLOAT
+        assert prepared.video.tensor.dtype is torch.bfloat16
+        assert prepared.video.tensor.storage_offset() == 0
+        assert prepared.video.tensor.untyped_storage().data_ptr() != video.untyped_storage().data_ptr()
+        torch.testing.assert_close(prepared.video.tensor.cpu(), expected)
+    finally:
+        torch.cuda.set_per_process_memory_fraction(1.0)
+        real_empty_cache()
+        real_synchronize()
