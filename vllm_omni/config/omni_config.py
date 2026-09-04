@@ -46,6 +46,8 @@ from vllm_omni.config.stage_config import (
     _select_processor_funcs,
     build_stage_runtime_overrides,
     load_deploy_config,
+    normalize_pipeline_cli_overrides,
+    reconcile_diffusion_attention_overrides,
 )
 from vllm_omni.diffusion.diffusion_kv.config import DiffusionKVCacheMode
 
@@ -212,6 +214,7 @@ class _ParallelConfigEngineOverrides(TypedDict, total=False):
     ring_degree: int
     allgather_degree: int
     ulysses_mode: str
+    ulysses_a2a_permute: bool
     cfg_parallel_size: int
     vae_patch_parallel_size: int
     vae_parallel_mode: str
@@ -317,13 +320,23 @@ def _resolve_scheduler_path(execution_type: StageExecutionType, async_scheduling
     return _scheduler_path(_resolve_scheduler(execution_type, async_scheduling))
 
 
-def _stage_cli_overrides(stage_id: int, cli_overrides: Mapping[str, Any]) -> dict[str, Any]:
+def _stage_cli_overrides(
+    stage_id: int,
+    cli_overrides: Mapping[str, Any],
+    *,
+    execution_type: StageExecutionType | None = None,
+) -> dict[str, Any]:
     runtime_overrides = build_stage_runtime_overrides(stage_id, dict(cli_overrides))
     global_stage_fields = _global_stage_cli_fields()
     result: dict[str, Any] = {}
     for key, value in runtime_overrides.items():
         if key in global_stage_fields or f"stage_{stage_id}_{key}" in cli_overrides:
             result[key] = _copy_value(value)
+
+    # step_execution is a diffusion execution protocol, not an LLM engine
+    # argument. Keep global and stage-scoped CLI values off AR/generation stages.
+    if execution_type is not None and execution_type is not StageExecutionType.DIFFUSION:
+        result.pop("step_execution", None)
     return result
 
 
@@ -384,6 +397,7 @@ class OmniStageModelConfig:
     interleave_mm_strings: bool | None = None
     media_io_kwargs: dict[str, Any] | None = None
     active_stream_window: int = Field(default=0, ge=0)
+    session_mode: str = "turn"
     duplex_max_sessions: int = Field(default=1, ge=1)
     enable_sleep_mode: bool = False
     default_sampling_params: dict[str, Any] | None = None
@@ -571,6 +585,7 @@ class OmniStageDiffusionParallelConfig(OmniStageParallelConfig):
     ring_degree: int = Field(default=1, ge=1)
     allgather_degree: int = Field(default=1, ge=1)
     ulysses_mode: str = "strict"
+    ulysses_a2a_permute: bool = False
     cfg_parallel_size: int = Field(default=1, ge=1)
     vae_patch_parallel_size: int = Field(default=1, ge=1)
     text_encoder_tp_size: int = Field(default=1, ge=1)
@@ -730,6 +745,7 @@ class _DiffusionConfigProjection:
         default_factory=lambda: {
             "transformer": True,
             "vae": True,
+            "text_encoder": True,
         }
     )
     override_transformer_cls_name: str | None = None
@@ -1211,6 +1227,9 @@ def _stage_engine_values(
     if topology.omni_kv_config:
         engine["omni_kv_config"] = _copy_value(topology.omni_kv_config)
     if stage_cli_overrides:
+        if topology.execution_type == StageExecutionType.DIFFUSION:
+            # Mirror StageConfig.to_omegaconf so both projections resolve alike.
+            reconcile_diffusion_attention_overrides(engine, stage_cli_overrides)
         engine.update(_copy_value(stage_cli_overrides))
     _validate_stage_engine_override_ownership(
         topology.stage_id,
@@ -1380,6 +1399,10 @@ class BaseVllmOmniStageConfig:
     @property
     def prompt_expand_func(self) -> str | None:
         return self.stage_pipeline_config.prompt_expand_func
+
+    @property
+    def prompt_transform_func(self) -> str | None:
+        return self.stage_pipeline_config.prompt_transform_func
 
     @property
     def cfg_kv_collect_func(self) -> str | None:
@@ -1641,6 +1664,7 @@ def _build_model_config(
         kwargs["tokenizer_subdir"] = topology.tokenizer_subdir
     return cast(Any, OmniStageModelConfig)(
         default_sampling_params=default_sampling_params,
+        session_mode=deploy.session_mode,
         duplex_max_sessions=duplex_max_sessions,
         **kwargs,
     )
@@ -1843,6 +1867,7 @@ class VllmOmniConfig:
         """Create a structured config from a resolved pipeline and deploy YAML."""
         if cli_overrides is None:
             cli_overrides = {}
+        cli_overrides = normalize_pipeline_cli_overrides(pipeline_cfg, cli_overrides)
 
         deploy, loaded_deploy_config_path = _get_deploy_config(
             pipeline_cfg,
@@ -1872,7 +1897,11 @@ class VllmOmniConfig:
                 _stage_engine_values(
                     deploy_by_id.get(topology.stage_id),
                     topology,
-                    _stage_cli_overrides(topology.stage_id, cli_overrides),
+                    _stage_cli_overrides(
+                        topology.stage_id,
+                        cli_overrides,
+                        execution_type=topology.execution_type,
+                    ),
                 ),
                 model=model,
             )

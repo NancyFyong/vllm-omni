@@ -29,6 +29,7 @@ from vllm_omni.diffusion.data import (
     DiffusionOutput,
     DiffusionRequestAbortedError,
     OmniDiffusionConfig,
+    uses_diffusers_adapter,
 )
 from vllm_omni.diffusion.diffusion_kv.config import DiffusionKVCacheMode, is_scheduler_paged_kv_mode
 from vllm_omni.diffusion.diffusion_kv.initialization import initialize_diffusion_kv_control_plane
@@ -158,8 +159,14 @@ def _resolve_custom_pipeline_cls(custom_pipeline_args: dict[str, Any] | None) ->
 
 def supports_request_batch(od_config: OmniDiffusionConfig) -> bool:
     model_cls = _resolve_custom_pipeline_cls(getattr(od_config, "custom_pipeline_args", None))
-    if model_cls is None:
-        model_cls = DiffusionModelRegistry._try_load_model_cls(getattr(od_config, "model_class_name", None))
+    if model_cls is not None:
+        return bool(getattr(model_cls, "supports_request_batch", False))
+
+    if uses_diffusers_adapter(od_config):
+        model_cls = DiffusionModelRegistry._try_load_model_cls("DiffusersAdapterPipeline")
+        return bool(getattr(model_cls, "supports_request_batch", False))
+
+    model_cls = DiffusionModelRegistry._try_load_model_cls(getattr(od_config, "model_class_name", None))
     if model_cls is None:
         return False
     return bool(getattr(model_cls, "supports_request_batch", False))
@@ -1048,9 +1055,9 @@ class DiffusionEngine:
         width: int,
         guidance_scale: float,
         num_image_inputs: int = 1,
+        num_inference_steps: int = 1,
     ) -> OmniDiffusionRequest | None:
-        """Build a one-step model request for startup profiling or warmup."""
-
+        """Build a minimal model request for startup profiling or warmup."""
         prompt: OmniTextPrompt = {"prompt": "dummy run"}
         supports_image_input, supports_audio_input = supports_multimodal_input(self.od_config)
         if supports_image_input:
@@ -1071,7 +1078,7 @@ class DiffusionEngine:
             sampling_params=OmniDiffusionSamplingParams(
                 height=height,
                 width=width,
-                num_inference_steps=1,
+                num_inference_steps=num_inference_steps,
                 num_frames=num_frames,
                 guidance_scale=guidance_scale,
                 num_outputs_per_prompt=1,
@@ -1142,6 +1149,7 @@ class DiffusionEngine:
             height=512,
             width=512,
             guidance_scale=0.0,
+            num_inference_steps=1,
         )
         if req is None:
             logger.info("Skipping dummy warmup run (num_frames=0)")
