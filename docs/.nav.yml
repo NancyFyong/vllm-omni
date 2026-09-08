@@ -66,6 +66,7 @@ nav:
       - ModelOpt: user_guide/quantization/modelopt.md
       - AutoRound: user_guide/quantization/autoround.md
       - msModelSlim: user_guide/quantization/msmodelslim.md
+      - TorchAO: user_guide/quantization/torchao.md
     - Diffusion Acceleration:
       - Overview and Compatibility:
         - Overview: user_guide/diffusion_features.md
@@ -128,6 +129,7 @@ nav:
         - Async Chunk: design/feature/async_chunk.md
         - Async Diffusion Output: design/feature/async_diffusion_output.md
         - Async Omni Output Materialization: design/feature/omni_async_output_materialization.md
+        - Prefill/Decode Phase Contract: design/feature/preprocess_phase_contract.md
         - Automatic Prefix Caching: design/feature/prefix_caching.md
         - Realtime AR-Diffusion: design/feature/realtime_ar_diffusion.md
       - Communication:
