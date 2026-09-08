@@ -340,7 +340,11 @@ concurrency 1, ~12.8x aggregate throughput at concurrency 8.
 
 #### Stage-0 `max_num_seqs`: first-packet vs throughput
 
-Same setup, varying stage 0's `max_num_seqs` (stage 1 stays at 1):
+This subsection is operator tuning guidance, not a claim this PR optimizes
+anything: the shipped deploy default is unchanged (`max_num_seqs: 4`). The
+numbers below are a single run on the same contended H20 as above (one unrelated
+job holding ~80% SM, no repeats), so read them as directional, not as measured
+speedups. Same setup, varying stage 0's `max_num_seqs` (stage 1 stays at 1):
 
 | stage-0 `max_num_seqs` | client concurrency | req/s | RTF | TTFP mean / p99 (ms) | underrun p99 (s) |
 |---|---|---|---|---|---|
@@ -357,7 +361,8 @@ Reading of this:
 - Below the limit (`concurrency <= max_num_seqs`) the setting is irrelevant, as
   expected — c=1 and c=4 are identical for both.
 - At c=8, raising the limit to 8 admits every request instead of queueing half
-  of them: **+27% throughput and 4.5x lower first-packet latency**.
+  of them: in this single run, roughly +27% throughput and ~4.5x lower
+  first-packet latency.
 - Throughput saturates around 3.7-3.9 req/s (~17 s of audio per second). Past
   c=8 you only buy queueing delay.
 - The cost of admitting more streams is a 0.22-0.29 s worst-case buffer deficit
