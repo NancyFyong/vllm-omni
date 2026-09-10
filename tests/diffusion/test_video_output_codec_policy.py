@@ -107,3 +107,39 @@ def test_encode_path_uses_container_compatible_video_and_audio_codecs(
         assert audio_stream.codec_context.name == expected_audio_codec
         assert video_stream.codec_context.width == 48
         assert video_stream.codec_context.height == 32
+
+
+@pytest.mark.parametrize("mux_path", ["array", "iterator"])
+def test_webm_opus_resamples_unsupported_44100_audio(mux_path: str) -> None:
+    av = pytest.importorskip("av")
+    frames = np.zeros((6, 32, 48, 3), dtype=np.uint8)
+    audio = np.zeros(4410, dtype=np.float32)
+
+    if mux_path == "array":
+        encoded = media_utils.mux_video_audio_bytes(
+            frames,
+            audio,
+            fps=8,
+            audio_sample_rate=44100,
+            output_format="webm",
+        )
+    else:
+        encoded = media_utils.mux_av_video_audio_bytes(
+            (av.VideoFrame.from_ndarray(frame, format="rgb24") for frame in frames),
+            width=48,
+            height=32,
+            audio_waveform=audio,
+            fps=8,
+            audio_sample_rate=44100,
+            output_format="webm",
+        )
+
+    with av.open(io.BytesIO(encoded)) as container:
+        audio_stream = container.streams.audio[0]
+        decoded_audio = list(container.decode(audio=0))
+
+    assert audio_stream.codec_context.name == "opus"
+    assert audio_stream.rate == 48000
+    assert decoded_audio
+    assert {frame.sample_rate for frame in decoded_audio} == {48000}
+    assert sum(frame.samples for frame in decoded_audio) == 4800

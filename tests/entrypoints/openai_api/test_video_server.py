@@ -3041,7 +3041,7 @@ def test_sync_url_second_output_failure_removes_all_artifacts(test_client, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_url_transport_cancellation_removes_partially_published_artifacts(
+async def test_url_transport_cancellation_waits_for_publication_before_cleanup(
     test_client,
     tmp_path,
     mocker: MockerFixture,
@@ -3057,39 +3057,57 @@ async def test_url_transport_cancellation_removes_partially_published_artifacts(
 
     async def _generate(prompt, request_id, sampling_params_list):
         del prompt, request_id, sampling_params_list
-        yield MockVideoResult([object(), object()])
+        yield MockVideoResult([object()])
 
     handler._engine_client.generate = _generate
     mocker.patch(
         "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
-        side_effect=[b"first", b"second"],
+        return_value=b"encoded",
     )
-    real_save = manager.save
-    second_save_started = asyncio.Event()
-    save_count = 0
 
-    async def save_then_block(data, storage_key):
-        nonlocal save_count
-        save_count += 1
-        result = await real_save(data, storage_key)
-        if save_count == 2:
-            second_save_started.set()
-            await asyncio.Future()
-        return result
+    write_started = threading.Event()
+    allow_write = threading.Event()
+    write_finished = threading.Event()
+    delete_attempted = threading.Event()
+    real_save_sync = manager._save_sync
+    real_delete_sync = manager._delete_sync
 
-    mocker.patch.object(manager, "save", side_effect=save_then_block)
+    def delayed_save_sync(data, storage_key):
+        write_started.set()
+        if not allow_write.wait(timeout=5):
+            raise TimeoutError("test did not release the storage writer")
+        try:
+            return real_save_sync(data, storage_key)
+        finally:
+            write_finished.set()
+
+    def observed_delete_sync(storage_key):
+        try:
+            return real_delete_sync(storage_key)
+        finally:
+            delete_attempted.set()
+
+    mocker.patch.object(manager, "_save_sync", side_effect=delayed_save_sync)
+    mocker.patch.object(manager, "_delete_sync", side_effect=observed_delete_sync)
     task = asyncio.create_task(
         handler.generate_videos(
-            VideoGenerationRequest(prompt="cancel URL output", num_outputs_per_prompt=2),
+            VideoGenerationRequest(prompt="cancel URL output"),
             "cancel-url",
         )
     )
 
-    await asyncio.wait_for(second_save_started.wait(), timeout=2)
+    assert await asyncio.to_thread(write_started.wait, 5)
     task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+    try:
+        delete_ran_before_write_finished = await asyncio.to_thread(delete_attempted.wait, 1)
+    finally:
+        allow_write.set()
+        assert await asyncio.to_thread(write_finished.wait, 5)
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
+    assert not delete_ran_before_write_finished
+    assert delete_attempted.is_set()
     assert not list(Path(manager.storage_path).iterdir())
 
 

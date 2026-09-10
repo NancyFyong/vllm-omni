@@ -551,9 +551,21 @@ class OmniOpenAIServingVideo:
                 detail="transport_mode='url' requires storage expiration",
             )
         storage_key = f"{uuid.uuid4().hex}.{output_format}"
+        save_task = asyncio.create_task(storage.STORAGE_MANAGER.save(video_bytes, storage_key))
         committed = False
         try:
-            await storage.STORAGE_MANAGER.save(video_bytes, storage_key)
+            try:
+                await asyncio.shield(save_task)
+            except asyncio.CancelledError:
+                try:
+                    await save_task
+                except Exception:
+                    logger.warning(
+                        "Video artifact publication %s failed during cancellation",
+                        storage_key,
+                        exc_info=True,
+                    )
+                raise
             url = storage.STORAGE_MANAGER.public_url(storage_key) or f"/v1/videos/artifacts/{storage_key}"
             committed = True
             return storage_key, url

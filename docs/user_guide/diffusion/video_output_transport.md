@@ -78,7 +78,8 @@ cannot drift:
 An explicit codec must be compatible with the selected container. A compatible
 encoder that cannot be opened on the current host falls back to the container's
 software default. Options from the unavailable encoder are discarded because
-FFmpeg does not accept options from another encoder family.
+FFmpeg does not accept options from another encoder family. WebM audio whose
+source rate is unsupported by Opus, such as 44.1 kHz, is resampled to 48 kHz.
 
 Hardware encoding is optional. In particular, Hopper data-center GPUs do not
 provide an NVENC block; requesting `h264_nvenc` there exercises the verified
