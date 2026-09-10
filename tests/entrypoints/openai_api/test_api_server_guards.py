@@ -55,6 +55,7 @@ from starlette.websockets import WebSocketDisconnect
 from vllm.v1.engine.exceptions import EngineDeadError, EngineGenerateError
 
 from vllm_omni.entrypoints.openai import api_server
+from vllm_omni.entrypoints.serve.utils import errors as serve_errors
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
@@ -89,6 +90,7 @@ _EXPECTED_ROUTER_ROUTES = {
     ("GET", "/v1/videos/{video_id}"),
     ("DELETE", "/v1/videos/{video_id}"),
     ("GET", "/v1/videos/{video_id}/content"),
+    ("GET", "/v1/videos/artifacts/{storage_key}"),
     ("POST", "/v1/omni/sleep"),
     ("POST", "/v1/omni/wakeup"),
 }
@@ -412,6 +414,9 @@ async def test_api_server_assembly_replaces_upstream_routes_and_mounts_omni_rout
     async def fake_storage_start():
         captured["storage_started"] = True
 
+    async def fake_storage_stop():
+        captured["storage_stopped"] = True
+
     async def fake_serve_http(app, **_kwargs):
         captured["served_app"] = app
         task = asyncio.create_task(asyncio.sleep(0))
@@ -426,7 +431,11 @@ async def test_api_server_assembly_replaces_upstream_routes_and_mounts_omni_rout
         "shutdown_unsupported_routes",
         lambda app, restrictions: captured.setdefault("restrictions", restrictions),
     )
-    monkeypatch.setattr(api_server, "STORAGE_MANAGER", SimpleNamespace(start=fake_storage_start))
+    monkeypatch.setattr(
+        api_server,
+        "STORAGE_MANAGER",
+        SimpleNamespace(start=fake_storage_start, stop=fake_storage_stop),
+    )
     monkeypatch.setattr(api_server, "serve_http", fake_serve_http)
 
     sock = _FakeSocket()
@@ -442,6 +451,7 @@ async def test_api_server_assembly_replaces_upstream_routes_and_mounts_omni_rout
 
     assert captured["supported_tasks"] == ("generate",)
     assert captured["storage_started"] is True
+    assert captured["storage_stopped"] is True
     assert captured["restrictions"] == {}
     assert captured["video_shutdown"] is True
     assert captured["speech_shutdown"] is True
@@ -507,7 +517,11 @@ async def test_timestamp_middleware_stamps_http_and_passes_websocket(monkeypatch
     monkeypatch.setattr(api_server, "build_async_omni", fake_build_async_omni)
     monkeypatch.setattr(api_server, "omni_init_app_state", fake_omni_init_app_state)
     monkeypatch.setattr(api_server, "shutdown_unsupported_routes", lambda *_a, **_k: None)
-    monkeypatch.setattr(api_server, "STORAGE_MANAGER", SimpleNamespace(start=lambda: asyncio.sleep(0)))
+    monkeypatch.setattr(
+        api_server,
+        "STORAGE_MANAGER",
+        SimpleNamespace(start=lambda: asyncio.sleep(0), stop=lambda: asyncio.sleep(0)),
+    )
     monkeypatch.setattr(api_server, "serve_http", fake_serve_http)
 
     await api_server.omni_run_server_worker("127.0.0.1:8000", _FakeSocket(), _minimal_args())
@@ -656,14 +670,16 @@ def test_images_generation_without_engine_preserves_service_unavailable_error() 
     assert exc_info.value.detail == "Multi-stage engine not initialized. Start server with a multi-stage omni model."
 
 
-def test_images_generation_without_multistage_chat_handler_preserves_unavailable_error(monkeypatch) -> None:
+def test_images_generation_without_multistage_chat_handler_preserves_unavailable_error() -> None:
     """Lock images generation when chat serving was not wired.
 
     Fails if multi-stage images stop requiring ``openai_serving_chat``, or the
     503 detail changes after images/chat ownership splits.
     """
     app = FastAPI()
-    app.state.engine_client = SimpleNamespace(stage_configs=[object(), object()])
+    # Prefer real stage_type input over monkeypatching ``get_stage_type``:
+    # ``_get_engine_and_model`` lives in ``app_state`` and binds utils directly.
+    app.state.engine_client = SimpleNamespace(stage_configs=[{"stage_type": "llm"}, {"stage_type": "diffusion"}])
     app.state.stage_configs = app.state.engine_client.stage_configs
     app.state.openai_serving_models = SimpleNamespace(base_model_paths=[SimpleNamespace(name="demo-model")])
     app.state.openai_serving_chat = None
@@ -671,7 +687,6 @@ def test_images_generation_without_multistage_chat_handler_preserves_unavailable
 
     raw_request = _request_for(app, method="POST", path="/v1/images/generations")
     request = api_server.ImageGenerationRequest(prompt="a cat", model="demo-model")
-    monkeypatch.setattr(api_server, "get_stage_type", lambda _stage_cfg: "diffusion")
 
     with pytest.raises(HTTPException) as exc_info:
         asyncio.run(api_server.generate_images(request, raw_request))
@@ -709,9 +724,7 @@ def test_engine_error_json_response_includes_request_and_stage_fields(monkeypatc
     in P0.2 is not a false red.
     """
     app = FastAPI()
-    # TODO(P0.2): retarget this call if ``_register_omni_exception_handlers``
-    # leaves api_server (red here is a rename, not a surface regression).
-    api_server._register_omni_exception_handlers(app)
+    serve_errors._register_omni_exception_handlers(app)
     app.state.engine_client = SimpleNamespace(errored=True, engine=SimpleNamespace(is_alive=lambda: False))
     app.state.server = object()
     app.state.args = SimpleNamespace(log_error_stack=False)
@@ -719,7 +732,7 @@ def test_engine_error_json_response_includes_request_and_stage_fields(monkeypatc
     req = _request_for(app, method="POST", path="/v1/chat/completions")
     req.state.request_metadata = SimpleNamespace(request_id="req-123")
 
-    monkeypatch.setattr(api_server, "terminate_if_errored", lambda **_kwargs: None)
+    monkeypatch.setattr(serve_errors, "terminate_if_errored", lambda **_kwargs: None)
 
     exc = EngineGenerateError("boom")
     exc.error_stage_id = 2  # type: ignore[attr-defined]
@@ -740,14 +753,12 @@ def test_engine_dead_error_handler_registered_returns_json(monkeypatch) -> None:
     JSON with ``request_id``.
     """
     app = FastAPI()
-    # TODO(P0.2): retarget this call if ``_register_omni_exception_handlers``
-    # leaves api_server (red here is a rename, not a surface regression).
-    api_server._register_omni_exception_handlers(app)
+    serve_errors._register_omni_exception_handlers(app)
     app.state.engine_client = SimpleNamespace(errored=True, engine=SimpleNamespace(is_alive=lambda: False))
     app.state.server = object()
     app.state.args = SimpleNamespace(log_error_stack=False)
 
-    monkeypatch.setattr(api_server, "terminate_if_errored", lambda **_kwargs: None)
+    monkeypatch.setattr(serve_errors, "terminate_if_errored", lambda **_kwargs: None)
 
     handler = app.exception_handlers[EngineDeadError]
     req = _request_for(app)
@@ -766,7 +777,7 @@ async def test_pure_diffusion_app_state_key_snapshot(monkeypatch) -> None:
     models), wires a handler that must stay None, or leaves a required
     handler as None.
     """
-    stage = SimpleNamespace(engine_args={})
+    stage = SimpleNamespace(stage_type="diffusion", engine_args={})
     engine = _FakeEngineClient(stage_configs=[stage])
 
     def _for_diffusion_factory(label: str):
@@ -776,7 +787,6 @@ async def test_pure_diffusion_app_state_key_snapshot(monkeypatch) -> None:
 
         return _factory
 
-    monkeypatch.setattr(api_server, "get_stage_type", lambda _cfg: "diffusion")
     monkeypatch.setattr(api_server.OmniOpenAIServingChat, "for_diffusion", _for_diffusion_factory("chat"))
     monkeypatch.setattr(api_server.OmniOpenAIServingChatBatch, "for_diffusion", _for_diffusion_factory("chat_batch"))
     monkeypatch.setattr(
@@ -811,7 +821,7 @@ async def test_pure_diffusion_app_state_key_snapshot(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_pure_diffusion_speech_forwards_media_access_args(monkeypatch) -> None:
-    stage = SimpleNamespace(engine_args={})
+    stage = SimpleNamespace(stage_type="diffusion", engine_args={})
     engine = _FakeEngineClient(stage_configs=[stage])
     speech_kwargs = {}
 
@@ -827,7 +837,6 @@ async def test_pure_diffusion_speech_forwards_media_access_args(monkeypatch) -> 
         speech_kwargs.update(kwargs)
         return _marker("speech")
 
-    monkeypatch.setattr(api_server, "get_stage_type", lambda _cfg: "diffusion")
     monkeypatch.setattr(api_server.OmniOpenAIServingChat, "for_diffusion", _for_diffusion_factory("chat"))
     monkeypatch.setattr(api_server.OmniOpenAIServingChatBatch, "for_diffusion", _for_diffusion_factory("chat_batch"))
     monkeypatch.setattr(
