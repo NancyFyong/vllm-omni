@@ -61,25 +61,6 @@ which denormalizes in bfloat16. Relative to that path, values may differ by at
 most one level out of 255. Float32 inputs remain byte-identical after
 quantization.
 
-## Benchmark
-
-Use the checked-in benchmark to compare an unmodified main checkout with the
-candidate checkout. It separates cold startup from warm requests, requires at
-least three measured rounds, reports process-tree host RSS and peak allocated
-GPU memory, and compares the quantized output frames.
-
-```bash
-python benchmarks/diffusion/bench_device_postprocess.py \
-  --baseline-checkout /path/to/vllm-omni-main \
-  --candidate-checkout . \
-  --warmup-runs 1 \
-  --rounds 3
-```
-
-The two checkouts must use the same model cache, Python environment, visible GPU,
-prompt, seed, shape, and sampling parameters. MP4 hashes are not compared because
-multi-threaded video encoding is not byte-deterministic.
-
 ## Scope
 
 WAN2.2 is the reference migration for the first contract version. Other video
