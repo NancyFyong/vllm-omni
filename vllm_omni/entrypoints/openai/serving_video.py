@@ -16,12 +16,14 @@ from http import HTTPStatus
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, cast
 
+import pybase64 as base64
 from fastapi import HTTPException
 from PIL import Image
 from vllm.engine.protocol import EngineClient
 from vllm.logger import init_logger
 
 from vllm_omni.diffusion.model_metadata import get_diffusion_model_metadata
+from vllm_omni.diffusion.utils.media_utils import count_mp4_frames, normalize_preencode_batch_frames
 from vllm_omni.entrypoints.async_omni import AsyncOmni
 from vllm_omni.entrypoints.openai.protocol.videos import (
     VideoAction,
@@ -147,7 +149,12 @@ def _video_metadata_from_artifacts(artifacts: VideoGenerationArtifacts) -> dict[
     if not artifacts.videos:
         return metadata
 
-    num_frames = count_video_frames(artifacts.videos[0])
+    video = artifacts.videos[0]
+    # Pre-encoded outputs arrive as MP4 bytes, which carry no tensor shape.
+    if isinstance(video, (bytes, bytearray, memoryview)):
+        num_frames = count_mp4_frames(bytes(video))
+    else:
+        num_frames = count_video_frames(video)
     if num_frames is not None and num_frames > 0:
         metadata["num_frames"] = num_frames
         if artifacts.output_fps > 0:
@@ -454,7 +461,15 @@ class OmniOpenAIServingVideo:
                     status_code=HTTPStatus.BAD_REQUEST.value,
                     detail="extra_params must be a JSON object/dict.",
                 )
-            gen_params.extra_args.update(without_video_output_overrides(request.extra_params))
+            if request.extra_params.get("preencode_mp4") and "preencode_batch_frames" in request.extra_params:
+                try:
+                    normalize_preencode_batch_frames(request.extra_params["preencode_batch_frames"])
+                except ValueError as exc:
+                    raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=str(exc)) from exc
+            model_extra_params = without_video_output_overrides(request.extra_params)
+            if request.extra_params.get("preencode_mp4") and "video_codec_options" in request.extra_params:
+                model_extra_params["video_codec_options"] = request.extra_params["video_codec_options"]
+            gen_params.extra_args.update(model_extra_params)
 
             # Redact inline arrays when logging so RoboLab policy requests do
             # not flood the server log with image/state payloads.
@@ -510,9 +525,22 @@ class OmniOpenAIServingVideo:
 
     def _resolve_video_output_settings(self, request: VideoGenerationRequest) -> ResolvedVideoOutputSettings:
         try:
-            return resolve_video_output_settings(self._engine_client, request.extra_params)
+            settings = resolve_video_output_settings(self._engine_client, request.extra_params)
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=str(exc)) from exc
+
+        preencode_mp4 = isinstance(request.extra_params, dict) and request.extra_params.get("preencode_mp4")
+        if preencode_mp4 and settings.output_format != "mp4":
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="preencode_mp4 requires output_format='mp4'",
+            )
+        if preencode_mp4 and settings.transport_mode == "shared_memory":
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail="preencode_mp4 is not supported with transport_mode='shared_memory'",
+            )
+        return settings
 
     def _validate_immediate_transport(
         self,
@@ -640,32 +668,38 @@ class OmniOpenAIServingVideo:
             for index, video in enumerate(artifacts.videos):
                 audio = artifacts.audios[index]
                 if settings.transport_mode == "url":
-                    video_bytes = await asyncio.to_thread(
-                        _encode_video_bytes,
-                        video,
-                        fps=artifacts.output_fps,
-                        audio=audio,
-                        audio_sample_rate=artifacts.audio_sample_rate if audio is not None else None,
-                        video_codec=settings.codec,
-                        video_codec_options=settings.codec_options,
-                        output_format=settings.output_format,
-                        frame_converter=self._video_frame_converter,
-                    )
+                    if isinstance(video, bytes):
+                        video_bytes = video
+                    else:
+                        video_bytes = await asyncio.to_thread(
+                            _encode_video_bytes,
+                            video,
+                            fps=artifacts.output_fps,
+                            audio=audio,
+                            audio_sample_rate=artifacts.audio_sample_rate if audio is not None else None,
+                            video_codec=settings.codec,
+                            video_codec_options=settings.codec_options,
+                            output_format=settings.output_format,
+                            frame_converter=self._video_frame_converter,
+                        )
                     storage_key, url = await self._store_video_artifact(video_bytes, settings.output_format)
                     storage_keys.append(storage_key)
                     video_data.append(VideoData(url=url, action=artifacts.actions[index]))
                 else:
-                    encoded = await asyncio.to_thread(
-                        encode_video_base64,
-                        video,
-                        fps=artifacts.output_fps,
-                        audio=audio,
-                        audio_sample_rate=artifacts.audio_sample_rate if audio is not None else None,
-                        video_codec=settings.codec,
-                        video_codec_options=settings.codec_options,
-                        output_format=settings.output_format,
-                        frame_converter=self._video_frame_converter,
-                    )
+                    if isinstance(video, bytes):
+                        encoded = (await asyncio.to_thread(base64.b64encode, video)).decode("ascii")
+                    else:
+                        encoded = await asyncio.to_thread(
+                            encode_video_base64,
+                            video,
+                            fps=artifacts.output_fps,
+                            audio=audio,
+                            audio_sample_rate=artifacts.audio_sample_rate if audio is not None else None,
+                            video_codec=settings.codec,
+                            video_codec_options=settings.codec_options,
+                            output_format=settings.output_format,
+                            frame_converter=self._video_frame_converter,
+                        )
                     video_data.append(VideoData(b64_json=encoded, action=artifacts.actions[index]))
             response = VideoGenerationResponse(
                 created=int(time.time()),
@@ -718,6 +752,13 @@ class OmniOpenAIServingVideo:
             return b"", artifacts.stage_durations, artifacts.peak_memory_mb, action, video_metadata
 
         started_at = time.perf_counter()
+        if isinstance(artifacts.videos[0], bytes):
+            video_bytes = artifacts.videos[0]
+            logger.info(
+                "Video response received pre-encoded MP4 bytes: %.2f ms",
+                (time.perf_counter() - started_at) * 1000,
+            )
+            return video_bytes, artifacts.stage_durations, artifacts.peak_memory_mb, action, video_metadata
         video_bytes = await asyncio.to_thread(
             _encode_video_bytes,
             artifacts.videos[0],

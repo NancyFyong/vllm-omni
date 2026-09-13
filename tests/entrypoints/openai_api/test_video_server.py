@@ -39,7 +39,11 @@ from vllm_omni.entrypoints.openai.protocol.videos import (
     VideoResponse,
     VideoSharedMemoryHandle,
 )
-from vllm_omni.entrypoints.openai.serving_video import OmniOpenAIServingVideo, ReferenceImage
+from vllm_omni.entrypoints.openai.serving_video import (
+    OmniOpenAIServingVideo,
+    ReferenceImage,
+    VideoGenerationArtifacts,
+)
 from vllm_omni.entrypoints.openai.storage import LocalStorageManager, LocalStorageTTLManager
 from vllm_omni.entrypoints.openai.stores import AsyncDictStore, TaskRegistry
 from vllm_omni.entrypoints.openai.video.generation import helpers as video_generation_helpers
@@ -157,6 +161,141 @@ def test_raw_and_base64_encoders_receive_persistent_converter(mocker: MockerFixt
         assert encoder.call_args.kwargs["frame_converter"] is handler._video_frame_converter
         assert "encoding_config" not in encoder.call_args.kwargs
     handler.shutdown()
+
+
+@pytest.mark.parametrize("batch_frames", [0, -1, True, 1.5, "17", None])
+def test_preencode_rejects_invalid_batch_frames_before_generation(batch_frames):
+    engine = FakeAsyncOmni()
+    handler = OmniOpenAIServingVideo.for_diffusion(engine, model_name="test-model")
+    request = VideoGenerationRequest(
+        prompt="test", extra_params={"preencode_mp4": True, "preencode_batch_frames": batch_frames}
+    )
+    try:
+        with pytest.raises(HTTPException, match="preencode_batch_frames") as exc:
+            asyncio.run(handler.generate_video_bytes(request, "invalid-batch"))
+        assert exc.value.status_code == 400
+        assert engine.captured_prompt is None
+    finally:
+        handler.shutdown()
+
+
+def test_preencoded_video_bytes_preserve_metadata(mocker: MockerFixture):
+    handler = OmniOpenAIServingVideo.for_diffusion(FakeAsyncOmni(), model_name="test-model")
+    # Resolved frame count differs from anything the request asked for, so the
+    # metadata has to come from the encoded stream rather than request defaults.
+    preencoded = _make_test_video_bytes((32, 24), num_frames=7)
+    artifacts = VideoGenerationArtifacts(
+        videos=[preencoded],
+        audios=[None],
+        actions=[None],
+        audio_sample_rate=24000,
+        output_fps=24.0,
+        stage_durations={"decode": 0.5},
+        peak_memory_mb=123.0,
+        metrics={"generation_time": 1.25},
+    )
+    mocker.patch.object(handler, "_run_and_extract", return_value=artifacts)
+    encoder = mocker.patch("vllm_omni.entrypoints.openai.serving_video._encode_video_bytes")
+    try:
+        result = asyncio.run(handler.generate_video_bytes(VideoGenerationRequest(prompt="test"), "preencoded"))
+        assert result == (
+            preencoded,
+            {"decode": 0.5},
+            123.0,
+            None,
+            {
+                "fps": 24.0,
+                "num_frames": 7,
+                "duration_s": 7 / 24.0,
+                "metrics": {"generation_time": 1.25},
+            },
+        )
+        encoder.assert_not_called()
+    finally:
+        handler.shutdown()
+
+
+def test_preencoded_video_bytes_support_base64_without_reencoding(mocker: MockerFixture):
+    engine = FakeAsyncOmni()
+    engine.video_output_transport = VideoOutputTransportConfig(transport_mode="base64")
+    handler = OmniOpenAIServingVideo.for_diffusion(engine, model_name="test-model")
+    preencoded = b"preencoded-mp4"
+    artifacts = VideoGenerationArtifacts(
+        videos=[preencoded],
+        audios=[None],
+        actions=[None],
+        audio_sample_rate=24000,
+        output_fps=24.0,
+        stage_durations={},
+        peak_memory_mb=0.0,
+        metrics=None,
+    )
+    mocker.patch.object(handler, "_run_and_extract", return_value=artifacts)
+    encoder = mocker.patch("vllm_omni.entrypoints.openai.serving_video.encode_video_base64")
+    try:
+        response = asyncio.run(
+            handler.generate_videos(
+                VideoGenerationRequest(prompt="test", extra_params={"preencode_mp4": True}),
+                "preencoded-base64",
+            )
+        )
+        assert base64.b64decode(response.data[0].b64_json) == preencoded
+        encoder.assert_not_called()
+    finally:
+        handler.shutdown()
+
+
+def test_preencode_forwards_codec_options_but_not_other_output_settings(mocker: MockerFixture):
+    engine = FakeAsyncOmni()
+    handler = OmniOpenAIServingVideo.for_diffusion(engine, model_name="test-model")
+    mocker.patch(
+        "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
+        return_value=b"encoded-video",
+    )
+    request = VideoGenerationRequest(
+        prompt="test",
+        extra_params={
+            "preencode_mp4": True,
+            "preencode_batch_frames": 5,
+            "video_codec_options": {"preset": "ultrafast"},
+            "video_codec": "h264",
+            "output_format": "mp4",
+        },
+    )
+    try:
+        asyncio.run(handler.generate_video_bytes(request, "preencoded-options"))
+        captured = engine.captured_sampling_params_list[0].extra_args
+        assert captured["preencode_mp4"] is True
+        assert captured["preencode_batch_frames"] == 5
+        assert captured["video_codec_options"] == {"preset": "ultrafast"}
+        assert "video_codec" not in captured
+        assert "output_format" not in captured
+    finally:
+        handler.shutdown()
+
+
+@pytest.mark.parametrize(
+    "transport",
+    [
+        VideoOutputTransportConfig(output_format="webm"),
+        VideoOutputTransportConfig(transport_mode="shared_memory"),
+    ],
+)
+def test_preencode_rejects_incompatible_output_transport_before_generation(transport):
+    engine = FakeAsyncOmni()
+    engine.video_output_transport = transport
+    handler = OmniOpenAIServingVideo.for_diffusion(
+        engine,
+        model_name="test-model",
+        allow_shared_memory=True,
+    )
+    request = VideoGenerationRequest(prompt="test", extra_params={"preencode_mp4": True})
+    try:
+        with pytest.raises(HTTPException, match="preencode_mp4"):
+            handler._resolve_video_output_settings(request)
+        assert engine.captured_prompt is None
+    finally:
+        handler.shutdown()
 
 
 def test_resolve_diffusion_od_config_falls_back_to_attribute():

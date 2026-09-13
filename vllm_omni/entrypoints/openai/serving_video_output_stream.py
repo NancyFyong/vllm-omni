@@ -562,6 +562,14 @@ class OmniStreamingVideoOutputHandler:
                     status_code=HTTPStatus.BAD_REQUEST.value,
                     detail="extra_params must be a JSON object/dict.",
                 )
+            # Worker-side pre-encoding produces one progressive MP4, which this
+            # path's incremental fMP4 encoder cannot consume; streaming already
+            # overlaps encoding through that encoder instead.
+            if request.extra_params.get("preencode_mp4"):
+                raise HTTPException(
+                    status_code=HTTPStatus.BAD_REQUEST.value,
+                    detail="preencode_mp4 is not supported for streaming video sessions.",
+                )
             gen_params.extra_args.update(without_video_output_overrides(request.extra_params))
 
         self._apply_lora(request.lora, gen_params)
