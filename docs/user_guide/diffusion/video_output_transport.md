@@ -161,15 +161,18 @@ python benchmarks/diffusion/bench_video_output_sinks.py \
   --frames 48 --height 512 --width 768 --rounds 3
 ```
 
-For a 54.0 MiB uint8 video on the development host, three fresh consumer
-processes per sink measured:
-
-| Sink | JSON boundary | Consumer RSS mean [range] | Frame hash |
-| --- | ---: | ---: | --- |
-| `base64` | 14.70 MiB | 101.3 [101.3, 101.4] MiB | Lossy after MP4 decode |
-| `shared_memory` | Less than 1 KiB | 52.3 [51.8, 53.4] MiB | Exact |
-
-The benchmark starts a fresh consumer for each measurement, takes its RSS
+This microbenchmark starts a fresh consumer for each measurement, takes its RSS
 baseline after imports, reads every frame byte, and verifies that shared-memory
-segments are removed. These are per-payload memory measurements, not throughput
-results.
+segments are removed. It measures the JSON boundary and consumer memory, not
+HTTP delivery or end-to-end generation latency.
+
+To compare delivery modes, measure the real `/v1/videos/sync` route with identical
+decoded frames and encoder settings. Separate response latency from the time
+until frames are usable: URL mode still requires downloading and decoding the
+artifact, while shared memory requires mapping and reading the frames. Include
+both compressible and noisy clips, server and client peak RSS, warmup and repeated
+runs. Compare the default bytes path against the base revision, and keep device
+postprocessing and worker pre-encoding unchanged in real-model comparisons.
+Shared memory avoids encoding and decoding, but its raw RGB allocation can be
+much larger than a compressed artifact; a small handle alone is not a memory or
+latency result.

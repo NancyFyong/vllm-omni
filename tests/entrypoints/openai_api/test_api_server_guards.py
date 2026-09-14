@@ -358,7 +358,7 @@ def test_router_openapi_paths_cover_http_manifest() -> None:
 
 
 @pytest.mark.asyncio
-async def test_api_server_assembly_replaces_upstream_routes_and_mounts_omni_router(monkeypatch) -> None:
+async def test_api_server_assembly_replaces_upstream_routes_and_mounts_omni_router(monkeypatch, mocker) -> None:
     """Lock worker assembly: override, mount, storage, handlers, full census.
 
     Fails if assembly stops replacing upstream chat/batch/models/health/profiler,
@@ -442,7 +442,7 @@ async def test_api_server_assembly_replaces_upstream_routes_and_mounts_omni_rout
     monkeypatch.setattr(
         api_server,
         "STORAGE_MANAGER",
-        SimpleNamespace(start=fake_storage_start, stop=fake_storage_stop),
+        mocker.Mock(spec=type(api_server.STORAGE_MANAGER), start=fake_storage_start, stop=fake_storage_stop),
     )
     monkeypatch.setattr(api_server, "serve_http", fake_serve_http)
 
@@ -497,7 +497,7 @@ async def test_api_server_assembly_replaces_upstream_routes_and_mounts_omni_rout
 
 
 @pytest.mark.asyncio
-async def test_timestamp_middleware_stamps_http_and_passes_websocket(monkeypatch) -> None:
+async def test_timestamp_middleware_stamps_http_and_passes_websocket(monkeypatch, mocker) -> None:
     """Lock outermost timestamp middleware behavior.
 
     Fails if HTTP requests lose ``request_timestamp``, or WebSocket scopes
@@ -528,7 +528,7 @@ async def test_timestamp_middleware_stamps_http_and_passes_websocket(monkeypatch
     monkeypatch.setattr(
         api_server,
         "STORAGE_MANAGER",
-        SimpleNamespace(start=lambda: asyncio.sleep(0), stop=lambda: asyncio.sleep(0)),
+        mocker.Mock(spec=type(api_server.STORAGE_MANAGER)),
     )
     monkeypatch.setattr(api_server, "serve_http", fake_serve_http)
 

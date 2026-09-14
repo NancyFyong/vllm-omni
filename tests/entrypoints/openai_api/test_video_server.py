@@ -248,7 +248,7 @@ def test_preencoded_video_bytes_support_base64_without_reencoding(mocker: Mocker
 @pytest.mark.parametrize(
     ("request_overrides", "expected_codec", "expected_codec_options"),
     [
-        ({}, "libx264", {"crf": "0"}),
+        ({}, None, {"crf": "0"}),
         (
             {"video_codec": "h264", "video_codec_options": {"preset": "slow"}},
             "h264",
@@ -256,15 +256,17 @@ def test_preencoded_video_bytes_support_base64_without_reencoding(mocker: Mocker
         ),
     ],
 )
+@pytest.mark.parametrize("deployment_codec", ["libx264", "libx265"])
 def test_preencode_forwards_resolved_codec_policy_but_not_other_output_settings(
     mocker: MockerFixture,
+    deployment_codec: str,
     request_overrides: dict[str, object],
-    expected_codec: str,
+    expected_codec: str | None,
     expected_codec_options: dict[str, str],
 ):
     engine = FakeAsyncOmni()
     engine.video_output_transport = VideoOutputTransportConfig(
-        video_codec="libx264",
+        video_codec=deployment_codec,
         video_codec_options={"crf": "0"},
     )
     handler = OmniOpenAIServingVideo.for_diffusion(engine, model_name="test-model")
@@ -288,7 +290,7 @@ def test_preencode_forwards_resolved_codec_policy_but_not_other_output_settings(
         captured = engine.captured_sampling_params_list[0].extra_args
         assert captured["preencode_mp4"] is True
         assert captured["preencode_batch_frames"] == 5
-        assert captured["video_codec"] == expected_codec
+        assert captured["video_codec"] == (expected_codec or deployment_codec)
         assert captured["video_codec_options"] == expected_codec_options
         assert "output_format" not in captured
     finally:
