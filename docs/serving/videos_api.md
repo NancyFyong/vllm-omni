@@ -246,11 +246,14 @@ These `extra_params` control how the server turns decoded frames into MP4 bytes.
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `preencode_mp4` | boolean | false | Encode the MP4 on the worker while the VAE is still decoding, instead of after the full video is materialized |
-| `video_codec_options` | object | null | Encoder options passed through to the H.264 encoder, such as `{"preset": "ultrafast", "threads": "0"}` |
+| `video_codec` | string | deployment/default policy | MP4-compatible encoder selected by the normal output policy |
+| `video_codec_options` | object | deployment/default policy | Encoder options, such as `{"preset": "ultrafast", "threads": "0"}` |
 
 With `preencode_mp4` enabled, each committed VAE chunk leaves the accelerator and
 is encoded while later chunks are still decoding, so host transfer and CPU
-encoding overlap the remaining decode instead of following it. The response is
+encoding overlap the remaining decode instead of following it. Deployment
+codec settings and request overrides are resolved before generation and the
+same effective codec policy is forwarded to the worker. The response is
 unchanged: the same complete MP4, byte-for-byte equivalent frames.
 
 ```bash

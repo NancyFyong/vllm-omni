@@ -316,6 +316,7 @@ class OmniOpenAIServingVideo:
         reference_image: ReferenceImage | None = None,
         reference_video: ReferenceVideo | None = None,
         reference_audio: ReferenceAudio | None = None,
+        output_settings: ResolvedVideoOutputSettings | None = None,
     ) -> VideoGenerationArtifacts:
         """Run the generation pipeline and extract video/audio/profiler outputs."""
         prompt: OmniTextPrompt = OmniTextPrompt(prompt=request.prompt, modalities=["video"])
@@ -467,8 +468,10 @@ class OmniOpenAIServingVideo:
                 except ValueError as exc:
                     raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=str(exc)) from exc
             model_extra_params = without_video_output_overrides(request.extra_params)
-            if request.extra_params.get("preencode_mp4") and "video_codec_options" in request.extra_params:
-                model_extra_params["video_codec_options"] = request.extra_params["video_codec_options"]
+            if request.extra_params.get("preencode_mp4"):
+                resolved_settings = output_settings or self._resolve_video_output_settings(request)
+                model_extra_params["video_codec"] = resolved_settings.codec
+                model_extra_params["video_codec_options"] = dict(resolved_settings.codec_options)
             gen_params.extra_args.update(model_extra_params)
 
             # Redact inline arrays when logging so RoboLab policy requests do
@@ -618,6 +621,7 @@ class OmniOpenAIServingVideo:
             reference_image=reference_image,
             reference_video=reference_video,
             reference_audio=reference_audio,
+            output_settings=settings,
         )
 
         if artifacts.videos and all(
@@ -736,6 +740,7 @@ class OmniOpenAIServingVideo:
             reference_image=reference_image,
             reference_video=reference_video,
             reference_audio=reference_audio,
+            output_settings=settings,
         )
         if len(artifacts.videos) > 1:
             logger.warning(

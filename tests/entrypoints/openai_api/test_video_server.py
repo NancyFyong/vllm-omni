@@ -245,43 +245,65 @@ def test_preencoded_video_bytes_support_base64_without_reencoding(mocker: Mocker
         handler.shutdown()
 
 
-def test_preencode_forwards_codec_options_but_not_other_output_settings(mocker: MockerFixture):
+@pytest.mark.parametrize(
+    ("request_overrides", "expected_codec", "expected_codec_options"),
+    [
+        ({}, "libx264", {"crf": "0"}),
+        (
+            {"video_codec": "h264", "video_codec_options": {"preset": "slow"}},
+            "h264",
+            {"preset": "slow"},
+        ),
+    ],
+)
+def test_preencode_forwards_resolved_codec_policy_but_not_other_output_settings(
+    mocker: MockerFixture,
+    request_overrides: dict[str, object],
+    expected_codec: str,
+    expected_codec_options: dict[str, str],
+):
     engine = FakeAsyncOmni()
+    engine.video_output_transport = VideoOutputTransportConfig(
+        video_codec="libx264",
+        video_codec_options={"crf": "0"},
+    )
     handler = OmniOpenAIServingVideo.for_diffusion(engine, model_name="test-model")
+    mocker.patch(
+        "vllm_omni.diffusion.utils.media_utils._encoder_is_usable",
+        return_value=True,
+    )
     mocker.patch(
         "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
         return_value=b"encoded-video",
     )
-    request = VideoGenerationRequest(
-        prompt="test",
-        extra_params={
-            "preencode_mp4": True,
-            "preencode_batch_frames": 5,
-            "video_codec_options": {"preset": "ultrafast"},
-            "video_codec": "h264",
-            "output_format": "mp4",
-        },
-    )
+    extra_params = {
+        "preencode_mp4": True,
+        "preencode_batch_frames": 5,
+        **request_overrides,
+    }
+    request = VideoGenerationRequest(prompt="test", extra_params=extra_params)
     try:
         asyncio.run(handler.generate_video_bytes(request, "preencoded-options"))
+        assert engine.captured_sampling_params_list is not None
         captured = engine.captured_sampling_params_list[0].extra_args
         assert captured["preencode_mp4"] is True
         assert captured["preencode_batch_frames"] == 5
-        assert captured["video_codec_options"] == {"preset": "ultrafast"}
-        assert "video_codec" not in captured
+        assert captured["video_codec"] == expected_codec
+        assert captured["video_codec_options"] == expected_codec_options
         assert "output_format" not in captured
     finally:
         handler.shutdown()
 
 
 @pytest.mark.parametrize(
-    "transport",
+    ("transport", "error"),
     [
-        VideoOutputTransportConfig(output_format="webm"),
-        VideoOutputTransportConfig(transport_mode="shared_memory"),
+        (VideoOutputTransportConfig(output_format="webm"), "preencode_mp4"),
+        (VideoOutputTransportConfig(transport_mode="shared_memory"), "preencode_mp4"),
+        (VideoOutputTransportConfig(video_codec="vp9"), "incompatible"),
     ],
 )
-def test_preencode_rejects_incompatible_output_transport_before_generation(transport):
+def test_preencode_rejects_incompatible_output_transport_before_generation(transport, error):
     engine = FakeAsyncOmni()
     engine.video_output_transport = transport
     handler = OmniOpenAIServingVideo.for_diffusion(
@@ -291,8 +313,8 @@ def test_preencode_rejects_incompatible_output_transport_before_generation(trans
     )
     request = VideoGenerationRequest(prompt="test", extra_params={"preencode_mp4": True})
     try:
-        with pytest.raises(HTTPException, match="preencode_mp4"):
-            handler._resolve_video_output_settings(request)
+        with pytest.raises(HTTPException, match=error):
+            asyncio.run(handler.generate_video_bytes(request, "invalid-preencode-policy"))
         assert engine.captured_prompt is None
     finally:
         handler.shutdown()

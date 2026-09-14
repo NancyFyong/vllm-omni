@@ -90,8 +90,8 @@ def test_decode_to_mp4_batches_consumer_transfers(monkeypatch):
     assert encoder.pushes[1].shape == (3, 2, 2, 3)
 
 
-def test_request_video_codec_options_reach_the_preencoded_mp4_encoder(monkeypatch):
-    """A client's encoder options must survive the worker-side pre-encode path."""
+def test_resolved_video_codec_policy_reaches_the_preencoded_mp4_encoder(monkeypatch):
+    """The resolved codec and options must survive the worker-side pre-encode path."""
     from vllm_omni.diffusion.models.minimax_h3 import pipeline_minimax_h3 as mod
 
     class FakeEncoder:
@@ -131,10 +131,13 @@ def test_request_video_codec_options_reach_the_preencoded_mp4_encoder(monkeypatc
         torch.zeros(1),
         height=2,
         width=2,
+        video_codec="libx264",
         video_codec_options={"preset": "ultrafast"},
     )
 
-    assert FakeEncoder.instances[-1].kwargs["video_codec_options"] == {"preset": "ultrafast"}
+    encoder_options = FakeEncoder.instances[-1].kwargs
+    assert encoder_options["video_codec"] == "libx264"
+    assert encoder_options["video_codec_options"] == {"preset": "ultrafast"}
 
 
 @pytest.mark.parametrize(
@@ -173,7 +176,14 @@ def test_preencode_request_preserves_serving_codec_defaults(codec_extra, expecte
         fps=24,
         num_frames=124,
         num_inference_steps=50,
-        extra_args={"task": "t2va", "aspect_ratio": "16:9", "preencode_mp4": True, **codec_extra, **batch_extra},
+        extra_args={
+            "task": "t2va",
+            "aspect_ratio": "16:9",
+            "preencode_mp4": True,
+            "video_codec": "libx264",
+            **codec_extra,
+            **batch_extra,
+        },
     )
     batch = DiffusionRequestBatch(
         [OmniDiffusionRequest(prompt="test", sampling_params=sampling, request_id="codec-defaults")]
@@ -181,6 +191,7 @@ def test_preencode_request_preserves_serving_codec_defaults(codec_extra, expecte
 
     pipeline.forward(batch)
 
+    assert pipeline.decode_to_mp4.call_args.kwargs["video_codec"] == "libx264"
     assert pipeline.decode_to_mp4.call_args.kwargs["video_codec_options"] == expected
     assert pipeline.decode_to_mp4.call_args.kwargs["batch_frames"] == batch_frames
 

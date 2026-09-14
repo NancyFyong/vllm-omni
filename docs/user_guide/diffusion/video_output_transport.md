@@ -45,9 +45,12 @@ vllm serve Wan-AI/Wan2.2-TI2V-5B-Diffusers --omni \
 | `video_codec_options` | `{}` | Uses codec-specific fast defaults when empty. |
 
 `video_codec`, `video_codec_options`, and `output_format` may also be overridden
-for one request through `extra_params`. These transport-only keys are removed
-before model sampling parameters are built. `transport_mode` and
-`shared_memory_ttl_seconds` are deployment-only; request-level values are
+for one request through `extra_params`. These transport-only keys are normally
+removed before model sampling parameters are built. When `preencode_mp4=true`,
+the server instead forwards the resolved MP4 codec and options—after merging
+deployment defaults with request overrides—to the worker encoder. Unsupported
+container/codec combinations are rejected before generation. `transport_mode`
+and `shared_memory_ttl_seconds` are deployment-only; request-level values are
 rejected before generation.
 
 ## HTTP response modes
