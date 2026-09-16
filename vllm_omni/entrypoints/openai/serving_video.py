@@ -645,11 +645,33 @@ class OmniOpenAIServingVideo:
             try:
                 video_data = []
                 for index, video in enumerate(artifacts.videos):
-                    handle = await asyncio.to_thread(
-                        _publish_shared_memory_video,
-                        video,
-                        settings.shared_memory_ttl_seconds,
+                    publish_task = asyncio.create_task(
+                        asyncio.to_thread(
+                            _publish_shared_memory_video,
+                            video,
+                            settings.shared_memory_ttl_seconds,
+                        )
                     )
+                    try:
+                        handle = await asyncio.shield(publish_task)
+                    except asyncio.CancelledError:
+                        # The thread can still create a segment after cancellation.
+                        # Keep its returned handle in the batch rollback set.
+                        try:
+                            while not publish_task.done():
+                                try:
+                                    await asyncio.shield(publish_task)
+                                except asyncio.CancelledError:
+                                    # Repeated cancellation must not detach the thread.
+                                    continue
+                            handles.append(publish_task.result())
+                        except Exception:
+                            logger.warning(
+                                "Video shared-memory publication %s failed during cancellation",
+                                index,
+                                exc_info=True,
+                            )
+                        raise
                     handles.append(handle)
                     video_data.append(VideoData(shm_handle=handle, action=artifacts.actions[index]))
                 response = VideoGenerationResponse(

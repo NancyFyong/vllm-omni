@@ -43,6 +43,7 @@ from vllm_omni.entrypoints.openai.serving_video import (
     OmniOpenAIServingVideo,
     ReferenceImage,
     VideoGenerationArtifacts,
+    _publish_shared_memory_video,
 )
 from vllm_omni.entrypoints.openai.storage import LocalStorageManager, LocalStorageTTLManager
 from vllm_omni.entrypoints.openai.stores import AsyncDictStore, TaskRegistry
@@ -52,7 +53,11 @@ from vllm_omni.entrypoints.openai.video.generation.helpers import (
     _read_upload_limited,
     _reference_video_decode_spec,
 )
-from vllm_omni.entrypoints.openai.video_output_shm import borrowed_video_frames, export_video_frames_to_shm
+from vllm_omni.entrypoints.openai.video_output_shm import (
+    borrowed_video_frames,
+    export_video_frames_to_shm,
+    release_video_frames,
+)
 from vllm_omni.errors import GuardrailViolationError
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 from vllm_omni.utils.tracking_parser import TrackingNamespace
@@ -3348,6 +3353,96 @@ def test_sync_shared_memory_second_output_failure_releases_first_handle(test_cli
     with pytest.raises(FileNotFoundError):
         with borrowed_video_frames(created[0]):
             pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_index", [0, 1], ids=["first-output", "second-output"])
+@pytest.mark.parametrize("publication_fails", [False, True], ids=["published", "failed"])
+@pytest.mark.parametrize("cancel_count", [1, 2], ids=["cancel-once", "cancel-twice"])
+async def test_shared_memory_cancellation_waits_for_publication_before_cleanup(
+    test_client,
+    mocker: MockerFixture,
+    blocked_index: int,
+    publication_fails: bool,
+    cancel_count: int,
+):
+    _set_video_output_transport(
+        test_client,
+        VideoOutputTransportConfig(transport_mode="shared_memory", shared_memory_ttl_seconds=60),
+    )
+    handler = test_client.app.state.openai_serving_video
+    frames = np.arange(2 * 8 * 8 * 3, dtype=np.uint8).reshape(2, 8, 8, 3)
+
+    async def _generate(prompt, request_id, sampling_params_list):
+        del prompt, request_id, sampling_params_list
+        yield MockVideoResult([frames, frames, frames])
+
+    handler._engine_client.generate = _generate
+    loop = asyncio.get_running_loop()
+    publication_started = asyncio.Event()
+    publication_finished = asyncio.Event()
+    allow_publication = threading.Event()
+    created: list[VideoSharedMemoryHandle] = []
+    publish_count = 0
+
+    def delayed_publish(video, ttl_seconds):
+        nonlocal publish_count
+        index = publish_count
+        publish_count += 1
+        try:
+            if index == blocked_index:
+                loop.call_soon_threadsafe(publication_started.set)
+                if not allow_publication.wait(timeout=10):
+                    raise TimeoutError("test did not release the SHM publisher")
+                if publication_fails:
+                    raise RuntimeError("SHM publication failed during cancellation")
+            handle = _publish_shared_memory_video(video, ttl_seconds)
+            created.append(handle)
+            return handle
+        finally:
+            if index == blocked_index:
+                loop.call_soon_threadsafe(publication_finished.set)
+
+    mocker.patch(
+        "vllm_omni.entrypoints.openai.serving_video._publish_shared_memory_video",
+        side_effect=delayed_publish,
+    )
+    release = mocker.patch(
+        "vllm_omni.entrypoints.openai.serving_video.release_video_frames",
+        wraps=release_video_frames,
+    )
+    task = asyncio.create_task(
+        handler.generate_videos(
+            VideoGenerationRequest(prompt="cancel SHM output", num_outputs_per_prompt=3),
+            "cancel-shm",
+        )
+    )
+    try:
+        await asyncio.wait_for(publication_started.wait(), timeout=5)
+        for _ in range(cancel_count):
+            task.cancel()
+            completed, _ = await asyncio.wait([task], timeout=0.1)
+        cleanup_started_early = release.call_count > 0
+        allow_publication.set()
+        await asyncio.wait_for(publication_finished.wait(), timeout=5)
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert not completed, "request finished before its publishing thread"
+        assert not cleanup_started_early
+        assert publish_count == blocked_index + 1
+        assert len(created) == blocked_index + int(not publication_fails)
+        assert release.call_count == len(created)
+        for handle in created:
+            with pytest.raises(FileNotFoundError):
+                with borrowed_video_frames(handle):
+                    pass
+    finally:
+        allow_publication.set()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.wait_for(publication_finished.wait(), timeout=5)
+        for handle in created:
+            release_video_frames(handle)
 
 
 def test_sync_shared_memory_rejects_requested_audio_before_generation(test_client, mocker: MockerFixture):
