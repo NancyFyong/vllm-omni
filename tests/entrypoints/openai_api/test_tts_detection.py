@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """TTS model detection: registry-driven stage -> model-type resolution.
 
 ``serving_speech.py`` used to carry a hand-written 20-branch ladder mapping
@@ -139,6 +140,7 @@ _PIPELINE_STAGES = [
     "audio_tokenizer",
     "audio_vae",
     "aura",
+    "breeze_tts_2",
     "code2wav",
     "cosyvoice3_code2wav",
     "cosyvoice3_talker",
@@ -147,6 +149,7 @@ _PIPELINE_STAGES = [
     "dit",
     "fish_speech_slow_ar",
     "fused_thinker_talker",
+    "gepard",
     "glm_tts",
     "glm_tts_dit",
     "higgs_audio_v2",
@@ -185,6 +188,7 @@ _STAGES = [*_PIPELINE_STAGES, None, "vae", "not_a_real_stage"]
 _ARCHS = [
     None,
     "VoxCPM2TalkerForConditionalGeneration",
+    "BreezeForConditionalGeneration",
     "MingTTSForConditionalGeneration",
     "CovoAudioForConditionalGeneration",
     "MyCovoAudioThing",
