@@ -844,6 +844,8 @@ def resolve_video_output_settings(
         codec_options = overrides["video_codec_options"]
     if "output_format" in overrides:
         output_format = overrides["output_format"]
+        if not isinstance(output_format, str) or not output_format:
+            raise TypeError("output_format must be a non-empty string")
     if force_output_format is not None:
         output_format = force_output_format
 
@@ -856,6 +858,13 @@ def resolve_video_output_settings(
         raise TypeError("video_codec_options must be a dict[str, str]")
     if not isinstance(output_format, str) or not output_format:
         raise TypeError("output_format must be a non-empty string")
+
+    if force_output_format is not None:
+        # A forced container owns its codec policy. In particular, the
+        # fragmented-MP4 WebSocket stream must not inherit WebM artifact
+        # settings from deployment or the request.
+        codec = None
+        codec_options = None
 
     resolved_codec, resolved_options = resolve_encoder_settings(
         codec,

@@ -165,10 +165,34 @@ def test_webm_uses_format_derived_defaults() -> None:
     assert settings.media_type == "video/webm"
 
 
-def test_streaming_forces_mp4_and_low_latency_options() -> None:
-    client = _GetterClient(_config(output_format="webm"))
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        None,
+        {
+            "output_format": "webm",
+            "video_codec": "libvpx-vp9",
+            "video_codec_options": {"deadline": "realtime"},
+        },
+    ],
+)
+def test_streaming_forces_mp4_and_ignores_artifact_codec_policy(
+    overrides: dict[str, object] | None,
+) -> None:
+    client = _GetterClient(
+        _config(
+            output_format="webm",
+            video_codec="libvpx-vp9",
+            video_codec_options={"deadline": "realtime"},
+        )
+    )
 
-    settings = resolve_video_output_settings(client, low_latency=True, force_output_format="mp4")
+    settings = resolve_video_output_settings(
+        client,
+        overrides,
+        low_latency=True,
+        force_output_format="mp4",
+    )
 
     assert settings.output_format == "mp4"
     assert settings.codec == "h264"
@@ -188,9 +212,17 @@ def test_streaming_forces_mp4_and_low_latency_options() -> None:
         {"output_format": ""},
     ],
 )
-def test_invalid_request_encoder_overrides_are_rejected(overrides: dict[str, object]) -> None:
+@pytest.mark.parametrize("force_output_format", [None, "mp4"])
+def test_invalid_request_encoder_overrides_are_rejected(
+    overrides: dict[str, object],
+    force_output_format: str | None,
+) -> None:
     with pytest.raises((TypeError, ValueError)):
-        resolve_video_output_settings(_GetterClient(_config()), overrides)
+        resolve_video_output_settings(
+            _GetterClient(_config()),
+            overrides,
+            force_output_format=force_output_format,
+        )
 
 
 def test_transport_and_ttl_are_resolved_from_deployment_config() -> None:

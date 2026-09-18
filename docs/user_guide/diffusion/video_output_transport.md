@@ -88,8 +88,9 @@ Hardware encoding is optional. In particular, Hopper data-center GPUs do not
 provide an NVENC block; requesting `h264_nvenc` there exercises the verified
 software fallback rather than hardware acceleration.
 
-The fragmented WebSocket stream remains MP4-only and resolves low-latency codec
-options independently of the artifact container.
+The fragmented WebSocket stream remains MP4-only and resolves its low-latency
+H.264 codec/options independently of artifact output format, codec, and codec
+options.
 
 ## URL artifacts
 
