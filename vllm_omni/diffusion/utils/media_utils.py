@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import functools
 import io
 import queue
 import threading
@@ -102,20 +101,6 @@ def _iter_audio_frames(
     yield from resampler.resample(None)
 
 
-@functools.cache
-def _encoder_is_usable(codec: str) -> bool:
-    try:
-        context = av.codec.CodecContext.create(codec, "w")
-        context.width = 64
-        context.height = 64
-        context.pix_fmt = "yuv420p"
-        context.open()
-    except (ValueError, av.error.FFmpegError) as exc:
-        logger.debug("Encoder %s is not usable on this host: %s", codec, exc)
-        return False
-    return True
-
-
 def default_video_codec_options(codec: str, *, low_latency: bool = False) -> dict[str, str]:
     options = dict(_FAST_CODEC_OPTIONS.get(codec, {}))
     if low_latency:
@@ -131,6 +116,11 @@ def resolve_encoder_settings(
     fallback: str | None = None,
     output_format: str | None = None,
 ) -> tuple[str, dict[str, str]]:
+    """Validate policy without probing a potentially different encoding process.
+
+    Explicit codec/options are preserved. Opening the encoder in the process
+    that actually muxes the video must fail rather than silently change policy.
+    """
     resolved_format = output_format or DEFAULT_OUTPUT_FORMAT
     _format_defaults(resolved_format)
     fallback_codec = fallback or default_video_codec_for_format(resolved_format)
@@ -148,14 +138,6 @@ def resolve_encoder_settings(
             f"expected one of {sorted(compatible_codecs)}"
         )
 
-    if requested_codec != fallback_codec and not _encoder_is_usable(requested_codec):
-        logger.warning(
-            "Video encoder %r cannot be opened on this host; falling back to %r.",
-            requested_codec,
-            fallback_codec,
-        )
-        requested_codec = fallback_codec
-        codec_options = None
     if codec_options:
         return requested_codec, dict(codec_options)
     return requested_codec, default_video_codec_options(requested_codec, low_latency=low_latency)

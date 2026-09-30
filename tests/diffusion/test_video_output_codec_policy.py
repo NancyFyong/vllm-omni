@@ -45,38 +45,57 @@ def test_default_encoder_options_preserve_the_existing_http_policy() -> None:
     }
 
 
-def test_unavailable_encoder_falls_back_with_matching_options(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(media_utils, "_encoder_is_usable", lambda codec: False)
+@pytest.mark.parametrize("requested_codec", ["h264_nvenc", "hevc_nvenc"])
+def test_encoder_policy_does_not_probe_the_resolving_process(mocker, requested_codec: str) -> None:
+    context = mocker.patch.object(media_utils.av.codec, "CodecContext")
+    context.create.side_effect = ValueError("encoder unavailable in API process")
 
     codec, options = resolve_encoder_settings(
-        "h264_nvenc",
+        requested_codec,
         {"preset": "p1", "tune": "ull"},
         output_format="mp4",
     )
 
-    assert codec == "h264"
-    assert options == {"preset": "ultrafast", "threads": "0"}
+    assert codec == requested_codec
+    assert options == {"preset": "p1", "tune": "ull"}
+    context.create.assert_not_called()
 
 
-def test_available_incompatible_encoder_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(media_utils, "_encoder_is_usable", lambda codec: True)
-
+@pytest.mark.parametrize("codec", ["h264", "h264_nvenc"])
+def test_incompatible_encoder_is_rejected(codec: str) -> None:
     with pytest.raises(ValueError, match="incompatible with 'webm'"):
-        resolve_encoder_settings("h264", output_format="webm")
+        resolve_encoder_settings(codec, output_format="webm")
 
 
-def test_unavailable_incompatible_encoder_is_not_silently_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(media_utils, "_encoder_is_usable", lambda codec: False)
-
-    with pytest.raises(ValueError, match="incompatible with 'webm'"):
-        resolve_encoder_settings("h264_nvenc", output_format="webm")
-
-
-def test_incompatible_fallback_codec_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(media_utils, "_encoder_is_usable", lambda codec: False)
-
+def test_incompatible_fallback_codec_is_rejected() -> None:
     with pytest.raises(ValueError, match="Fallback video codec 'h264' is incompatible with 'webm'"):
         resolve_encoder_settings("libvpx", fallback="h264", output_format="webm")
+
+
+@pytest.mark.parametrize("encode_path", ["array", "iterator", "chunked"])
+def test_unavailable_encoder_failure_is_propagated_from_encoding_process(mocker, encode_path: str) -> None:
+    codec, options = resolve_encoder_settings("h264_nvenc", {"preset": "p1", "tune": "ull"})
+    container = mocker.MagicMock()
+    container.__enter__.return_value = container
+    container.add_stream.side_effect = ValueError("requested encoder cannot be opened")
+    mocker.patch.object(media_utils.av, "open", return_value=container)
+    frames = np.zeros((2, 32, 48, 3), dtype=np.uint8)
+
+    with pytest.raises(ValueError, match="requested encoder cannot be opened"):
+        if encode_path == "array":
+            media_utils.mux_video_audio_bytes(frames, video_codec=codec, video_codec_options=options)
+        elif encode_path == "iterator":
+            media_utils.mux_av_video_audio_bytes(
+                [], width=48, height=32, video_codec=codec, video_codec_options=options
+            )
+        else:
+            encoder = media_utils.ChunkedMP4Encoder(
+                width=48, height=32, fps=8, video_codec=codec, video_codec_options=options
+            )
+            encoder.finish()
+
+    assert container.add_stream.call_args.args[0] == "h264_nvenc"
+    container.add_stream.assert_called_once()
 
 
 @pytest.mark.parametrize(

@@ -433,7 +433,22 @@ async def _run_video_generation_job(
             )
         )
 
-        save_context = await STORAGE_MANAGER.save(video_bytes, storage_key)
+        save_task = asyncio.create_task(STORAGE_MANAGER.save(video_bytes, storage_key))
+        try:
+            save_context = await asyncio.shield(save_task)
+        except asyncio.CancelledError:
+            # Cancelling the waiter cannot stop the storage thread. Drain the
+            # writer before rollback, even if DELETE cancels this task again.
+            try:
+                while not save_task.done():
+                    try:
+                        await asyncio.shield(save_task)
+                    except asyncio.CancelledError:
+                        continue
+                save_task.result()
+            except Exception:
+                logger.warning("Video job %s save failed during cancellation", video_id, exc_info=True)
+            raise
         logger.info("Video request %s persisted %s output file.", video_id, save_context.key)
 
         updated_fields = {

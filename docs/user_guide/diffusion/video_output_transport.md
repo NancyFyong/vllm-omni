@@ -78,15 +78,17 @@ cannot drift:
 | MP4 | H.264 | AAC | `video/mp4` |
 | WebM | VP9 | Opus | `video/webm` |
 
-An explicit codec must be compatible with the selected container. A compatible
-encoder that cannot be opened on the current host falls back to the container's
-software default. Options from the unavailable encoder are discarded because
-FFmpeg does not accept options from another encoder family. WebM audio whose
-source rate is unsupported by Opus, such as 44.1 kHz, is resampled to 48 kHz.
+An explicit codec must be compatible with the selected container. Codec and
+options are preserved without probing encoder availability in the API process:
+with `preencode_mp4`, encoding runs in the worker process. If the chosen encoder
+cannot be opened where encoding actually runs, generation fails rather than
+silently selecting another codec or dropping options. With `preencode_mp4`, this
+failure can occur after model inference. WebM audio whose source rate is
+unsupported by Opus, such as 44.1 kHz, is resampled to 48 kHz.
 
 Hardware encoding is optional. In particular, Hopper data-center GPUs do not
-provide an NVENC block; requesting `h264_nvenc` there exercises the verified
-software fallback rather than hardware acceleration.
+provide an NVENC block. On those workers, leave `video_codec` unset to use the
+software default, or explicitly select `h264`/`libx264` instead of `h264_nvenc`.
 
 The fragmented WebSocket stream remains MP4-only and resolves its low-latency
 H.264 codec/options independently of artifact output format, codec, and codec

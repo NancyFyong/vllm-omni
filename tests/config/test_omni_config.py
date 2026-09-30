@@ -127,7 +127,7 @@ def test_mammothmoda2_diffusion_stage_projects_native_backend_config() -> None:
     assert stage.diffusion_config.model_class_name == "MammothModa2DiTPipeline"
     assert stage.diffusion_config.model == "/models/MammothModa2-Preview"
     assert stage.diffusion_config.step_execution is False
-    assert stage.scheduler_config.max_num_seqs == 1
+    assert stage.scheduler_config.max_num_seqs == 8
     assert stage.connector_config.omni_kv_config == {"need_recv_cache": False}
 
 
@@ -886,6 +886,7 @@ def test_vllm_omni_stage_config_public_fields_use_typed_stage_realizations():
 
 def test_runtime_config_fields_match_structured_runtime_scope():
     assert {f.name for f in fields(OmniStageRuntimeConfig)} == {
+        "cuda_mps",
         "additional_config",
         "distributed_executor_backend",
         "worker_cls",
@@ -1578,6 +1579,68 @@ def test_diffusion_config_preserves_existing_coercion_hooks():
     assert cfg.max_cpu_loras == 1
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_diffusion_projection_retains_prefix_caching(enabled):
+    projection = omni_config_module._DiffusionConfigProjection
+    assert projection.from_kwargs().enable_prefix_caching is False
+    config = projection.from_kwargs(
+        diffusion_kv_mode="paged_scheduler",
+        diffusion_kv_max_rows_per_request=2,
+        enable_prefix_caching=enabled,
+    )
+    assert config.enable_prefix_caching is enabled
+
+
+@pytest.mark.parametrize(
+    "pipeline_value,stage_value,cli_value,expected",
+    [
+        (None, None, None, False),
+        (True, None, None, True),
+        (False, True, None, True),
+        (True, False, None, False),
+        (None, None, True, True),
+        (True, True, False, False),
+        (False, False, True, True),
+    ],
+)
+def test_diffusion_prefix_caching_precedence_and_transport(
+    tmp_path,
+    pipeline_value,
+    stage_value,
+    cli_value,
+    expected,
+):
+    import yaml
+
+    from vllm_omni.engine.stage_init_utils import _project_omni_stage_engine_args
+
+    stage_deploy = {
+        "stage_id": 0,
+        "diffusion_kv_mode": "paged_scheduler",
+        "diffusion_kv_max_rows_per_request": 2,
+    }
+    deploy = {"pipeline": "hunyuan_image3_dit", "async_chunk": False, "stages": [stage_deploy]}
+    if pipeline_value is not None:
+        deploy["enable_prefix_caching"] = pipeline_value
+    if stage_value is not None:
+        stage_deploy["enable_prefix_caching"] = stage_value
+    deploy_path = tmp_path / "prefix.yaml"
+    deploy_path.write_text(yaml.safe_dump(deploy))
+    cli = {} if cli_value is None else {"stage_0_enable_prefix_caching": cli_value}
+    stage = _from_pipeline_key(
+        "hunyuan_image3_dit",
+        deploy_config_path=str(deploy_path),
+        cli_overrides=cli,
+    ).stage_by_id(0)
+
+    assert bool(stage.cache_config.enable_prefix_caching) is expected
+    assert stage.diffusion_config.enable_prefix_caching is expected
+    assert _project_omni_stage_engine_args(stage)["enable_prefix_caching"] is expected
+    serialized = _serialize_stage_config(stage)
+    restored = omni_config_module._DiffusionConfigProjection.from_kwargs(**serialized["diffusion_config"])
+    assert restored.enable_prefix_caching is expected
+
+
 def test_diffusion_config_from_kwargs_reuses_legacy_normalization(monkeypatch):
     from vllm_omni.platforms import current_omni_platform
 
@@ -1997,6 +2060,28 @@ def test_async_chunk_rejects_mismatched_connector_edge(disabled_stage, builder):
             builder(pipeline, user_deploy_config=deploy)
 
 
+@pytest.mark.parametrize("scope", ["pipeline", "stage"])
+@pytest.mark.parametrize("from_yaml", [False, True])
+@pytest.mark.parametrize("builder", [merge_pipeline_deploy, VllmOmniConfig.from_pipeline_config])
+def test_async_chunk_rejects_quoted_false_before_selecting_processors(tmp_path, scope, from_yaml, builder):
+    pipeline = _resolve_pipeline_or_skip("qwen3_tts")
+    if from_yaml:
+        path = tmp_path / "quoted_false.yaml"
+        path.write_text(
+            'async_chunk: "false"\n' if scope == "pipeline" else 'stages:\n  - stage_id: 0\n    async_chunk: "false"\n'
+        )
+        deploy = load_deploy_config(path)
+    elif scope == "pipeline":
+        deploy = DeployConfig(async_chunk="false")
+    else:
+        deploy = DeployConfig(stages=[StageDeployConfig(stage_id=0, async_chunk="false")])
+    with pytest.raises(ValueError, match="async_chunk must be a boolean"):
+        if builder is merge_pipeline_deploy:
+            builder(pipeline, deploy)
+        else:
+            builder(pipeline, user_deploy_config=deploy)
+
+
 @pytest.mark.parametrize("explicit", [False, True])
 def test_diffusion_quantization_origin_survives_projection_and_transport(monkeypatch, explicit):
     from vllm_omni.diffusion.data import OmniDiffusionConfig, TransformerConfig
@@ -2115,3 +2200,31 @@ def test_structured_diffusion_stage_keeps_shared_globals_outside_diffusion():
 def test_structured_diffusion_stage_rejects_explicit_shared_engine_field(field_name, config_kwargs):
     with pytest.raises(ValueError, match=rf"stage 0.*{field_name}"):
         _build_single_diffusion_config(**config_kwargs)
+
+
+def test_mps_is_explicit_only_in_experimental_single_gpu_profile():
+    assert not load_deploy_config(_DEPLOY_DIR / "qwen3_tts.yaml").cuda_mps
+    deploy = load_deploy_config(_DEPLOY_DIR / "qwen3_tts_high_concurrency_mrv2_single_gpu.yaml")
+    assert deploy.cuda_mps
+    pipeline = _resolve_pipeline_or_skip("qwen3_tts")
+    stages = merge_pipeline_deploy(pipeline, deploy)
+    assert all(stage.yaml_runtime["cuda_mps"] is True for stage in stages)
+
+
+def test_mps_config_rejects_string_boolean(tmp_path):
+    path = tmp_path / "deploy.yaml"
+    path.write_text('cuda_mps: "false"\n')
+    with pytest.raises(ValueError, match="cuda_mps must be a boolean"):
+        load_deploy_config(path)
+
+
+def test_mps_stays_in_runtime_instead_of_engine_arguments():
+    from vllm_omni.engine.stage_init_utils import build_engine_args_dict_from_omni_stage_config
+
+    config = _from_pipeline_key(
+        "qwen3_tts", deploy_config_path=str(_DEPLOY_DIR / "qwen3_tts_high_concurrency_mrv2_single_gpu.yaml")
+    )
+    for stage in config.stage_configs:
+        assert stage.runtime_config.cuda_mps
+        args = build_engine_args_dict_from_omni_stage_config(stage, model="test-model")
+        assert "cuda_mps" not in args

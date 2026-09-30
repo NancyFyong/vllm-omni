@@ -281,7 +281,7 @@ def test_preencoded_video_bytes_support_base64_without_reencoding(mocker: Mocker
         ),
     ],
 )
-@pytest.mark.parametrize("deployment_codec", ["libx264", "libx265"])
+@pytest.mark.parametrize("deployment_codec", ["libx264", "libx265", "h264_nvenc", "hevc_nvenc"])
 def test_preencode_forwards_resolved_codec_policy_but_not_other_output_settings(
     mocker: MockerFixture,
     deployment_codec: str,
@@ -295,10 +295,8 @@ def test_preencode_forwards_resolved_codec_policy_but_not_other_output_settings(
         video_codec_options={"crf": "0"},
     )
     handler = OmniOpenAIServingVideo.for_diffusion(engine, model_name="test-model")
-    mocker.patch(
-        "vllm_omni.diffusion.utils.media_utils._encoder_is_usable",
-        return_value=True,
-    )
+    codec_context = mocker.patch.object(av.codec, "CodecContext")
+    codec_context.create.side_effect = ValueError("encoder unavailable in API process")
     mocker.patch(
         "vllm_omni.entrypoints.openai.serving_video._encode_video_bytes",
         return_value=b"encoded-video",
@@ -320,6 +318,7 @@ def test_preencode_forwards_resolved_codec_policy_but_not_other_output_settings(
         assert captured["video_codec"] == (expected_codec or deployment_codec)
         assert captured["video_codec_options"] == expected_codec_options
         assert "output_format" not in captured
+        codec_context.create.assert_not_called()
     finally:
         handler.shutdown()
 
@@ -2859,6 +2858,81 @@ def test_delete_in_progress_job_cancels_task_and_removes_metadata(test_client):
 
     retrieve_resp = test_client.get(f"/v1/videos/{video_id}")
     assert retrieve_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_count", [1, 2], ids=["cancel-once", "cancel-twice"])
+@pytest.mark.parametrize("fail_save", [False, True], ids=["save-success", "save-failure"])
+@pytest.mark.parametrize("output_format", ["mp4", "webm"])
+async def test_delete_during_async_save_waits_for_writer_before_cleanup(
+    test_client, mocker: MockerFixture, cancel_count: int, fail_save: bool, output_format: str
+):
+    handler = test_client.app.state.openai_serving_video
+    handler._engine_client.video_output_transport = VideoOutputTransportConfig(output_format=output_format)
+    mocker.patch.object(handler, "generate_video_bytes", return_value=(b"encoded", {}, 0.0, None))
+    mocker.patch.object(handler, "abort_request", return_value=None)
+    store = api_server.VIDEO_STORE
+    manager = api_server.STORAGE_MANAGER
+    video_id = "cancel-during-save"
+    storage_key = f"{video_id}.{output_format}"
+    await store.upsert(video_id, VideoResponse(id=video_id, model="test-model", prompt="test"))
+
+    write_started = threading.Event()
+    allow_write = threading.Event()
+    delete_attempted = threading.Event()
+    events: list[str] = []
+    real_save_sync = manager._save_sync
+    real_delete_sync = manager._delete_sync
+
+    def delayed_save_sync(data, key):
+        write_started.set()
+        if not allow_write.wait(timeout=10):
+            raise TimeoutError("test did not release storage writer")
+        try:
+            result = real_save_sync(data, key)
+            if fail_save:
+                raise RuntimeError("storage failed after writing")
+            return result
+        finally:
+            events.append("write-finished")
+
+    def observed_delete_sync(key):
+        events.append("delete")
+        delete_attempted.set()
+        return real_delete_sync(key)
+
+    mocker.patch.object(manager, "_save_sync", side_effect=delayed_save_sync)
+    mocker.patch.object(manager, "_delete_sync", side_effect=observed_delete_sync)
+    generation_task = asyncio.create_task(
+        video_generation_helpers._run_video_generation_job(handler, VideoGenerationRequest(prompt="test"), video_id)
+    )
+    await api_server.VIDEO_TASKS.upsert(video_id, generation_task)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=test_client.app), base_url="http://test") as client:
+        delete_task = None
+        try:
+            assert await asyncio.to_thread(write_started.wait, 5)
+            delete_task = asyncio.create_task(client.delete(f"/v1/videos/{video_id}"))
+            done, _ = await asyncio.wait({delete_task}, timeout=0.1)
+            assert not done
+            for _ in range(cancel_count - 1):
+                generation_task.cancel()
+                done, _ = await asyncio.wait({delete_task}, timeout=0.1)
+                assert not done
+            assert not delete_attempted.is_set()
+            assert await store.get(video_id) is not None
+        finally:
+            allow_write.set()
+            await asyncio.gather(generation_task, return_exceptions=True)
+            if delete_task is not None:
+                response = await delete_task
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] is True
+    assert generation_task.cancelled()
+    assert events == ["write-finished", "delete"]
+    assert await store.get(video_id) is None
+    assert not Path(manager.get_full_file_path(storage_key)).exists()
+    assert not list(Path(manager.storage_path).iterdir())
 
 
 def test_async_video_stays_queued_until_scheduler_admission(test_client):
