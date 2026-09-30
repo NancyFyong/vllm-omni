@@ -98,6 +98,7 @@ def test_unavailable_encoder_failure_is_propagated_from_encoding_process(mocker,
     container.add_stream.assert_called_once()
 
 
+@pytest.mark.parametrize("enable_borrowed_frames", [False, True])
 @pytest.mark.parametrize(
     ("output_format", "expected_video_codec", "expected_audio_codec"),
     [("mp4", "h264", "aac"), ("webm", "vp9", "opus")],
@@ -106,6 +107,7 @@ def test_encode_path_uses_container_compatible_video_and_audio_codecs(
     output_format: str,
     expected_video_codec: str,
     expected_audio_codec: str,
+    enable_borrowed_frames: bool,
 ) -> None:
     av = pytest.importorskip("av")
     frames = np.zeros((6, 32, 48, 3), dtype=np.uint8)
@@ -117,6 +119,7 @@ def test_encode_path_uses_container_compatible_video_and_audio_codecs(
         audio=audio,
         audio_sample_rate=16000,
         output_format=output_format,
+        enable_borrowed_frames=enable_borrowed_frames,
     )
 
     with av.open(io.BytesIO(encoded)) as container:
@@ -126,6 +129,27 @@ def test_encode_path_uses_container_compatible_video_and_audio_codecs(
         assert audio_stream.codec_context.name == expected_audio_codec
         assert video_stream.codec_context.width == 48
         assert video_stream.codec_context.height == 32
+
+
+def test_borrowed_frame_encoder_preserves_explicit_codec_and_options(mocker) -> None:
+    muxer = mocker.spy(media_utils, "mux_av_video_audio_bytes")
+    frames = np.zeros((2, 32, 48, 3), dtype=np.uint8)
+    options = {"deadline": "realtime", "cpu-used": "8"}
+    encoded = _encode_video_bytes(
+        frames,
+        fps=8,
+        output_format="webm",
+        video_codec="libvpx",
+        video_codec_options=options,
+        enable_borrowed_frames=True,
+    )
+
+    assert muxer.call_args.kwargs["video_codec"] == "libvpx"
+    assert muxer.call_args.kwargs["video_codec_options"] == options
+    assert muxer.call_args.kwargs["output_format"] == "webm"
+    with media_utils.av.open(io.BytesIO(encoded)) as container:
+        assert container.streams.video[0].codec_context.name == "vp8"
+        assert len(list(container.decode(video=0))) == 2
 
 
 @pytest.mark.parametrize("mux_path", ["array", "iterator"])

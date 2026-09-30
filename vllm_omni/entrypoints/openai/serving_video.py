@@ -37,7 +37,7 @@ from vllm_omni.entrypoints.openai.stage_params import (
     build_stage_sampling_params_list,
     get_default_sampling_params_list,
 )
-from vllm_omni.entrypoints.openai.utils import is_video_generation_pipeline, parse_lora_request
+from vllm_omni.entrypoints.openai.utils import get_stage_type, is_video_generation_pipeline, parse_lora_request
 from vllm_omni.entrypoints.openai.video_api_utils import (
     ResolvedVideoOutputSettings,
     _coerce_video_to_uint8_frames,
@@ -235,6 +235,24 @@ class OmniOpenAIServingVideo:
         model_archs = [None if od_config is None else getattr(od_config, "model_class_name", None)]
         model_archs.extend(_stage_diffusion_model_class_name(stage) for stage in self.stage_configs or ())
         return od_config, tuple(get_diffusion_model_metadata(model_arch) for model_arch in model_archs)
+
+    def _video_encoding_options(self) -> dict[str, bool]:
+        transport = _config_value(self._resolve_diffusion_od_config(), "video_output_transport")
+        if transport is None:
+            # Remote diffusion clients expose only model metadata to the API.
+            # The resolved stage config still carries the effective transport options.
+            stages = self.stage_configs or getattr(self._engine_client, "stage_configs", None) or ()
+            for stage in stages:
+                if get_stage_type(stage) != "diffusion":
+                    continue
+                transport = _config_value(_config_value(stage, "diffusion_config"), "video_output_transport")
+                if transport is None:
+                    transport = _config_value(_config_value(stage, "engine_args"), "video_output_transport")
+                if transport is not None:
+                    break
+        if _config_value(transport, "enable_borrowed_frames", False) is True:
+            return {"enable_borrowed_frames": True}
+        return {}
 
     def _resolve_video_generation_defaults(
         self,
@@ -729,6 +747,7 @@ class OmniOpenAIServingVideo:
                 if not committed:
                     await _release_published_video_handles(handles)
 
+        encoding_options = self._video_encoding_options()
         started_at = time.perf_counter()
         video_data = []
         storage_keys: list[str] = []
@@ -750,6 +769,7 @@ class OmniOpenAIServingVideo:
                             video_codec_options=settings.codec_options,
                             output_format=settings.output_format,
                             frame_converter=self._video_frame_converter,
+                            **encoding_options,
                         )
                     storage_key, url = await self._store_video_artifact(video_bytes, settings.output_format)
                     storage_keys.append(storage_key)
@@ -768,6 +788,7 @@ class OmniOpenAIServingVideo:
                             video_codec_options=settings.codec_options,
                             output_format=settings.output_format,
                             frame_converter=self._video_frame_converter,
+                            **encoding_options,
                         )
                     video_data.append(VideoData(b64_json=encoded, action=artifacts.actions[index]))
             response = VideoGenerationResponse(
@@ -825,6 +846,7 @@ class OmniOpenAIServingVideo:
             logger.info("Action-only video request %s completed; skipping video encoding.", reference_id)
             return b"", artifacts.stage_durations, artifacts.peak_memory_mb, action, video_metadata
 
+        encoding_options = self._video_encoding_options()
         started_at = time.perf_counter()
         if isinstance(artifacts.videos[0], bytes):
             video_bytes = artifacts.videos[0]
@@ -843,6 +865,7 @@ class OmniOpenAIServingVideo:
             video_codec_options=settings.codec_options,
             output_format=settings.output_format,
             frame_converter=self._video_frame_converter,
+            **encoding_options,
         )
         logger.info(
             "Video response encoding (%s bytes): %.2f ms",
