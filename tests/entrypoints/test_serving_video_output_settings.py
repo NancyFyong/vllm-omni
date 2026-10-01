@@ -9,6 +9,8 @@ from typing import Literal
 import pytest
 from omegaconf import OmegaConf
 
+from vllm_omni.config.omni_config import VllmOmniConfig, VllmOmniDiffusionStageConfig
+from vllm_omni.config.stage_config import PipelineConfig, StageExecutionType, StagePipelineConfig
 from vllm_omni.diffusion import data as diffusion_data
 from vllm_omni.diffusion import model_metadata
 from vllm_omni.diffusion.data import VideoOutputTransportConfig
@@ -92,10 +94,21 @@ def test_default_settings_preserve_the_existing_http_encoder(client_kind: str) -
     assert settings.transport_mode == "bytes"
 
 
-def test_out_of_process_engine_view_preserves_final_stage_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("typed_stage", [False, True], ids=["legacy", "typed"])
+@pytest.mark.parametrize("transport_mode", ["url", "shared_memory"])
+def test_out_of_process_engine_view_preserves_final_stage_transport(
+    monkeypatch: pytest.MonkeyPatch, typed_stage: bool, transport_mode: str
+) -> None:
     engine = AsyncOmniEngine.__new__(AsyncOmniEngine)
     engine.model = "unused"
     engine._diffusion_od_config_view = None
+    transport = {
+        "transport_mode": transport_mode,
+        "output_format": "webm",
+        "video_codec": "libvpx-vp9",
+        "video_codec_options": {"crf": "0"},
+        "shared_memory_ttl_seconds": 17,
+    }
     engine.stage_configs = OmegaConf.create(
         [
             {
@@ -106,25 +119,51 @@ def test_out_of_process_engine_view_preserves_final_stage_transport(monkeypatch:
             {
                 "stage_type": "diffusion",
                 "final_output": True,
-                "engine_args": {
-                    "video_output_transport": {
-                        "transport_mode": "url",
-                        "output_format": "webm",
-                        "video_codec_options": {"deadline": "realtime"},
-                    }
-                },
+                "engine_args": {"video_output_transport": transport},
             },
         ]
     )
+    if typed_stage:
+        pipeline = PipelineConfig(
+            model_type="generic_diffusion",
+            stages=tuple(
+                StagePipelineConfig(
+                    stage_id=index,
+                    model_stage="diffusion",
+                    execution_type=StageExecutionType.DIFFUSION,
+                    final_output=index == 1,
+                    final_output_type="video",
+                )
+                for index in range(2)
+            ),
+        )
+        engine.stage_configs = VllmOmniConfig.from_pipeline_config(
+            pipeline,
+            cli_overrides={
+                "stage_0_video_output_transport": {"transport_mode": "bytes"},
+                "stage_1_video_output_transport": transport,
+            },
+        ).stage_configs
+        assert isinstance(engine.stage_configs[1], VllmOmniDiffusionStageConfig)
     monkeypatch.setattr(diffusion_data, "resolve_model_class_name", lambda model: "WanPipeline")
     monkeypatch.setattr(model_metadata, "get_diffusion_model_metadata", lambda model_class: _ModelMetadata())
 
     settings = resolve_video_output_settings(engine)
 
-    assert settings.transport_mode == "url"
+    assert settings.transport_mode == transport_mode
     assert settings.output_format == "webm"
     assert settings.codec == "libvpx-vp9"
-    assert settings.codec_options == {"deadline": "realtime"}
+    assert settings.codec_options == {"crf": "0"}
+    assert settings.shared_memory_ttl_seconds == 17
+
+    overridden = resolve_video_output_settings(
+        engine,
+        {"output_format": "mp4", "video_codec": "libx265", "video_codec_options": {"crf": "18"}},
+    )
+    assert overridden.transport_mode == transport_mode
+    assert overridden.output_format == "mp4"
+    assert overridden.codec == "libx265"
+    assert overridden.codec_options == {"crf": "18"}
 
 
 def test_bridge_runtime_failure_is_not_silently_replaced_by_attribute_defaults() -> None:

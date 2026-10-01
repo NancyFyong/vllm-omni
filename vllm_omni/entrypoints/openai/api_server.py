@@ -2691,10 +2691,10 @@ async def create_video(
     try:
         settings = handler._resolve_video_output_settings(request)
     except HTTPException:
-        _cleanup_video_references(reference_video, reference_audio, control_path)
+        _cleanup_video_references(reference_video, reference_audio, control_path, latent_edit_input)
         raise
     if settings.transport_mode != "bytes":
-        _cleanup_video_references(reference_video, reference_audio, control_path)
+        _cleanup_video_references(reference_video, reference_audio, control_path, latent_edit_input)
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail=(

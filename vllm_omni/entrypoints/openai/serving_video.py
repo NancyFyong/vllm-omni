@@ -648,7 +648,13 @@ class OmniOpenAIServingVideo:
                 await asyncio.shield(save_task)
             except asyncio.CancelledError:
                 try:
-                    await save_task
+                    while not save_task.done():
+                        try:
+                            await asyncio.shield(save_task)
+                        except asyncio.CancelledError:
+                            # Repeated cancellation must not detach the writer.
+                            continue
+                    save_task.result()
                 except Exception:
                     logger.warning(
                         "Video artifact publication %s failed during cancellation",

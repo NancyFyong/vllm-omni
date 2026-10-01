@@ -3779,6 +3779,51 @@ def test_async_endpoint_rejects_immediate_transport_before_generation(test_clien
     run.assert_not_awaited()
 
 
+@pytest.mark.parametrize(
+    ("transport_mode", "extra_params", "message"),
+    [
+        ("base64", {}, "only supported by POST /v1/videos/sync"),
+        ("bytes", {"output_format": "webm", "video_codec": "h264"}, "incompatible with 'webm'"),
+    ],
+    ids=["immediate-transport", "invalid-codec"],
+)
+def test_async_video_rejection_cleans_latent_edit_uploads(
+    test_client, mocker: MockerFixture, transport_mode, extra_params, message
+):
+    engine = test_client.app.state.openai_serving_video._engine_client
+    engine.model_class_name = "MiniMaxH3Pipeline"
+    engine.video_output_transport = VideoOutputTransportConfig(transport_mode=transport_mode)
+    persist = video_generation_helpers._persist_latent_edit_source
+    uploaded_paths: list[str] = []
+
+    async def capture_upload(upload, *, field_name):
+        path = await persist(upload, field_name=field_name)
+        uploaded_paths.append(path)
+        return path
+
+    mocker.patch.object(video_generation_helpers, "_persist_latent_edit_source", side_effect=capture_upload)
+    run = mocker.patch.object(OmniOpenAIServingVideo, "_run_and_extract", new=mocker.AsyncMock())
+    try:
+        response = test_client.post(
+            "/v1/videos",
+            data={"prompt": "edit", "extra_params": json.dumps(extra_params)},
+            files=[
+                ("source_video", ("source.mov", b"source-video", "video/quicktime")),
+                ("source_audio", ("source.mp3", b"source-audio", "audio/mpeg")),
+                ("video_noise_mask", _mask_file("1")),
+                ("audio_noise_mask", _mask_file("1")),
+            ],
+        )
+        assert response.status_code == 400
+        assert message in response.json()["detail"]
+        run.assert_not_awaited()
+        assert len(uploaded_paths) == 2
+        assert all(not Path(path).exists() for path in uploaded_paths)
+    finally:
+        for path in uploaded_paths:
+            Path(path).unlink(missing_ok=True)
+
+
 @pytest.mark.parametrize("field", ["transport_mode", "shared_memory_ttl_seconds"])
 def test_request_rejects_deployment_only_transport_overrides_before_generation(
     test_client,
@@ -3904,10 +3949,16 @@ def test_sync_url_second_output_failure_removes_all_artifacts(test_client, tmp_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_index", [0, 1], ids=["first-output", "second-output"])
+@pytest.mark.parametrize("publication_fails", [False, True], ids=["published", "failed-after-write"])
+@pytest.mark.parametrize("cancel_count", [1, 2], ids=["cancel-once", "cancel-twice"])
 async def test_url_transport_cancellation_waits_for_publication_before_cleanup(
     test_client,
     tmp_path,
     mocker: MockerFixture,
+    blocked_index: int,
+    publication_fails: bool,
+    cancel_count: int,
 ):
     manager = LocalStorageTTLManager(
         storage_path=str(tmp_path / "url-storage"),
@@ -3920,7 +3971,7 @@ async def test_url_transport_cancellation_waits_for_publication_before_cleanup(
 
     async def _generate(prompt, request_id, sampling_params_list):
         del prompt, request_id, sampling_params_list
-        yield MockVideoResult([object()])
+        yield MockVideoResult([object(), object(), object()])
 
     handler._engine_client.generate = _generate
     mocker.patch(
@@ -3934,44 +3985,62 @@ async def test_url_transport_cancellation_waits_for_publication_before_cleanup(
     delete_attempted = threading.Event()
     real_save_sync = manager._save_sync
     real_delete_sync = manager._delete_sync
+    saved_keys: list[str] = []
+    deleted_keys: list[str] = []
 
     def delayed_save_sync(data, storage_key):
-        write_started.set()
-        if not allow_write.wait(timeout=5):
-            raise TimeoutError("test did not release the storage writer")
+        index = len(saved_keys)
+        saved_keys.append(storage_key)
         try:
-            return real_save_sync(data, storage_key)
+            if index == blocked_index:
+                write_started.set()
+                if not allow_write.wait(timeout=10):
+                    raise TimeoutError("test did not release the storage writer")
+            result = real_save_sync(data, storage_key)
+            if index == blocked_index and publication_fails:
+                raise RuntimeError("storage publication failed after write")
+            return result
         finally:
-            write_finished.set()
+            if index == blocked_index:
+                write_finished.set()
 
     def observed_delete_sync(storage_key):
         try:
             return real_delete_sync(storage_key)
         finally:
+            deleted_keys.append(storage_key)
             delete_attempted.set()
 
     mocker.patch.object(manager, "_save_sync", side_effect=delayed_save_sync)
     mocker.patch.object(manager, "_delete_sync", side_effect=observed_delete_sync)
     task = asyncio.create_task(
         handler.generate_videos(
-            VideoGenerationRequest(prompt="cancel URL output"),
+            VideoGenerationRequest(prompt="cancel URL output", num_outputs_per_prompt=3),
             "cancel-url",
         )
     )
 
-    assert await asyncio.to_thread(write_started.wait, 5)
-    task.cancel()
     try:
-        delete_ran_before_write_finished = await asyncio.to_thread(delete_attempted.wait, 1)
-    finally:
+        assert await asyncio.to_thread(write_started.wait, 5)
+        for _ in range(cancel_count):
+            task.cancel()
+            completed, _ = await asyncio.wait([task], timeout=0.1)
+        cleanup_started_early = delete_attempted.is_set()
         allow_write.set()
         assert await asyncio.to_thread(write_finished.wait, 5)
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    assert not delete_ran_before_write_finished
-    assert delete_attempted.is_set()
-    assert not list(Path(manager.storage_path).iterdir())
+        assert not completed, "request finished before its publishing thread"
+        assert not cleanup_started_early
+        assert len(saved_keys) == blocked_index + 1
+        assert sorted(deleted_keys) == sorted(saved_keys)
+        # No sweeper is started: rollback itself must remove every artifact.
+        assert not list(Path(manager.storage_path).iterdir())
+    finally:
+        allow_write.set()
+        await asyncio.gather(task, return_exceptions=True)
+        assert await asyncio.to_thread(write_finished.wait, 5)
 
 
 def test_sync_shared_memory_transport_returns_releasable_frames(test_client, mocker: MockerFixture):

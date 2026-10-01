@@ -25,6 +25,7 @@ from vllm.logger import init_logger
 from vllm.v1.engine.input_processor import InputProcessor
 
 from vllm_omni.config.config_factory import StageConfigFactory, with_trust_remote_code_override
+from vllm_omni.config.omni_config import VllmOmniDiffusionStageConfig
 from vllm_omni.config.resolver import OmniConfigResolution, resolve_omni_config
 from vllm_omni.config.stage_config import (
     _DEPLOY_DIR,
@@ -368,12 +369,15 @@ class OmniEngineBase:
                 (stage for stage in diffusion_stages if getattr(stage, "final_output", False)),
                 diffusion_stages[0] if diffusion_stages else None,
             )
-            engine_args = getattr(output_stage, "engine_args", None)
-            raw_transport = (
-                engine_args.get("video_output_transport")
-                if isinstance(engine_args, Mapping)
-                else getattr(engine_args, "video_output_transport", None)
-            )
+            if isinstance(output_stage, VllmOmniDiffusionStageConfig):
+                raw_transport = output_stage.diffusion_config.video_output_transport
+            else:
+                engine_args = getattr(output_stage, "engine_args", None)
+                raw_transport = (
+                    engine_args.get("video_output_transport")
+                    if isinstance(engine_args, Mapping)
+                    else getattr(engine_args, "video_output_transport", None)
+                )
             video_output_transport = VideoOutputTransportConfig.from_value(raw_transport)
             self._diffusion_od_config_view = SimpleNamespace(
                 model_class_name=model_class_name,
