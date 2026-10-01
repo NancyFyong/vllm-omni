@@ -18,7 +18,7 @@ from vllm_omni.config.stage_config import (
     StagePipelineConfig,
 )
 
-from .configuration_audio8_tts import ARKTTS_SLOW_BACKBONE_FALCON_H1
+from .configuration_audio8_tts import ARKTTS_SLOW_BACKBONE_FALCON_H1, Audio8TTSConfig
 
 _PROC = "vllm_omni.model_executor.stage_input_processors.audio8_tts"
 
@@ -96,9 +96,11 @@ AUDIO8_TTS_01B_PIPELINE = PipelineConfig(
 )
 
 
-def resolve_arktts_pipeline(hf_config: PretrainedConfig | None = None) -> PipelineConfig:
-    """Pick the Slow AR pipeline by ``slow_backbone`` (0.1b Falcon-H1 vs 0.6b)."""
-    backbone = getattr(hf_config, "slow_backbone", None) if hf_config is not None else None
+def resolve_arktts_pipeline(hf_config: PretrainedConfig | None = None) -> PipelineConfig | None:
+    """Pick the Audio8 variant, rejecting unrelated configs; None defaults to 0.6b."""
+    if hf_config is not None and not isinstance(hf_config, Audio8TTSConfig):
+        return None
+    backbone = hf_config.slow_backbone if hf_config is not None else None
     if backbone == ARKTTS_SLOW_BACKBONE_FALCON_H1:
         return AUDIO8_TTS_01B_PIPELINE
     return AUDIO8_TTS_PIPELINE

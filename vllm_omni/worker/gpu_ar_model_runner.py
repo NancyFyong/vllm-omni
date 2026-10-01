@@ -309,6 +309,10 @@ def _ensure_tensor_values(payload: dict[str, object]) -> dict[str, torch.Tensor]
     """
     result: dict[str, torch.Tensor] = {}
     for key, val in payload.items():
+        # Sparse per-request conditioning uses None for requests with no
+        # update. Absence is expected, not an unsupported wire value.
+        if val is None:
+            continue
         if isinstance(val, torch.Tensor):
             result[key] = val
         elif isinstance(val, (int, float, bool)):
@@ -468,7 +472,53 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
     def _update_states(self, scheduler_output: SchedulerOutput) -> Callable | None:
         deferred_state_corrections_fn = super()._update_states(scheduler_output)
         self._update_duplex_sampling_states(scheduler_output)
+        self._maybe_apply_duplex_window_reanchor(scheduler_output)
         return deferred_state_corrections_fn
+
+    def _maybe_apply_duplex_window_reanchor(self, scheduler_output: SchedulerOutput | None = None) -> None:
+        """Apply in-place KV reanchor and rotation on worker before model forward."""
+        reanchor_hook = getattr(getattr(self, "model", None), "apply_duplex_kv_reanchor", None)
+        if callable(reanchor_hook):
+            try:
+                reanchor_hook(self, scheduler_output=scheduler_output)
+            except TypeError:
+                reanchor_hook(self)
+            return
+
+        helper = getattr(self, "_duplex_window_helper", None)
+        if helper is not None and hasattr(helper, "maybe_apply_reanchor"):
+            try:
+                helper.maybe_apply_reanchor(self, scheduler_output=scheduler_output)
+            except TypeError:
+                helper.maybe_apply_reanchor(self)
+            return
+
+        # Fallback for dynamic runner inspection without hardcoding model classes
+        if not hasattr(self, "input_batch") or self.input_batch is None:
+            return
+        num_reqs = getattr(self.input_batch, "num_reqs", 0)
+        req_ids = self.input_batch.req_ids[:num_reqs]
+        has_reanchor = False
+        for req_id in req_ids:
+            info = self.model_intermediate_buffer.get(req_id)
+            if isinstance(info, dict) and isinstance(info.get("duplex"), dict):
+                if "stage0_reanchor" in info["duplex"]:
+                    has_reanchor = True
+                    break
+        if not has_reanchor:
+            return
+
+        model_module = getattr(getattr(self, "model", None), "__module__", "")
+        if "minicpmo_4_5" in model_module:
+            from vllm_omni.model_executor.models.minicpmo_4_5.duplex.window_kv import (
+                MiniCPMO45DuplexWorkerHelper,
+            )
+
+            MiniCPMO45DuplexWorkerHelper.maybe_apply_reanchor(self, scheduler_output=scheduler_output)
+
+    def _maybe_apply_stage0_reanchor(self) -> None:
+        """Backward-compatible alias for _maybe_apply_duplex_window_reanchor."""
+        self._maybe_apply_duplex_window_reanchor()
 
     def _request_final_stage_id(self, req_id: str) -> int | None:
         info = self.model_intermediate_buffer.get(req_id)
@@ -1605,7 +1655,9 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
         model_config = getattr(self, "model_config", None)
         if model_config is None:
             model_config = getattr(getattr(self, "vllm_config", None), "model_config", None)
-        if not bool(getattr(model_config, "async_chunk", False)):
+        if not bool(getattr(model_config, "async_chunk", False)) and not self._model_omni_flag(
+            getattr(self, "model", None), "supports_async_whole_payload"
+        ):
             return False
         if bool(getattr(model_config, "enable_return_routed_experts", False)):
             return False
@@ -1771,6 +1823,7 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
         if not needs_pooler_payload and prefix_cache_step_id is not None:
             # No consumer for this step's merge: consume the step context by
             # id (exactly-once contract). The cache write still lands.
+            assert self.omni_prefix_cache is not None
             self.omni_prefix_cache.discard_step(prefix_cache_step_id)
             prefix_cache_step_id = None
         if self.omni_prefix_cache is None and needs_scheduled_hidden_payload and not audio_sparse_output:
@@ -1910,8 +1963,6 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
                 cudagraph_stats=cudagraph_stats,
             )
             output.kv_extracted_req_ids = kv_extracted_req_ids
-            with record_function_or_nullcontext("omni_output_builder:get_omni_connector_output"):
-                output.omni_connector_output = self.get_omni_connector_output()
             output.routed_experts = routed_experts_lists
         return output
 
@@ -2061,6 +2112,14 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
                 scheduler_output.total_num_scheduled_tokens,
             )
 
+        post_sample_mm = getattr(getattr(self, "model", None), "post_sample_multimodal_outputs", None)
+        if callable(post_sample_mm):
+            multimodal_outputs = post_sample_mm(
+                req_ids=req_ids_output_copy,
+                invalid_req_indices=invalid_req_indices,
+                multimodal_outputs=multimodal_outputs,
+            )
+
         multimodal_outputs = self._run_post_sample_talker_mtp(
             req_ids=req_ids_output_copy,
             valid_sampled_token_ids=valid_sampled_token_ids,
@@ -2126,16 +2185,27 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
             multimodal_outputs=multimodal_outputs,
         )
 
+        # Runs a TP collective, so it must stay on the main thread: the builder
+        # below runs on the async output thread, which would race execute_model().
+        with record_function_or_nullcontext("omni_async_output:get_omni_connector_output"):
+            omni_connector_output = self.get_omni_connector_output()
+
         def output_builder() -> OmniModelRunnerOutput:
             if output_tensor_snapshot.async_payload is not None:
                 with record_function_or_nullcontext("omni_async_output:wait_cpu_payload"):
                     output_tensor_snapshot.async_payload.wait()
+            mm_snapshot = output_tensor_snapshot.multimodal_outputs
+            finalize_snapshot = getattr(
+                getattr(self, "model", None), "finalize_multimodal_outputs_from_cpu_snapshot", None
+            )
+            if callable(finalize_snapshot):
+                mm_snapshot = finalize_snapshot(mm_snapshot)
             with record_function_or_nullcontext("omni_output_builder:total"):
-                return self._build_omni_model_runner_output_from_snapshot(
+                output = self._build_omni_model_runner_output_from_snapshot(
                     scheduler_output=scheduler_output_snapshot,
                     hidden_states=output_tensor_snapshot.hidden_states,
                     staged_hidden_states_cpu=output_tensor_snapshot.staged_hidden_states_cpu,
-                    multimodal_outputs=output_tensor_snapshot.multimodal_outputs,
+                    multimodal_outputs=mm_snapshot,
                     req_ids_output_copy=req_ids_output_snapshot,
                     req_id_to_index_output_copy=req_id_to_index_output_snapshot,
                     valid_sampled_token_ids=valid_sampled_token_ids_snapshot,
@@ -2151,6 +2221,8 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
                     postprocess_already_applied=omni_postprocess_already_applied,
                     prefix_cache_step_id=prefix_cache_step_id,
                 )
+            output.omni_connector_output = omni_connector_output
+            return output
 
         if not use_async_omni_output:
             output = output_builder()

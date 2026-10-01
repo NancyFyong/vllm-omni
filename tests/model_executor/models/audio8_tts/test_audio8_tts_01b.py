@@ -10,7 +10,9 @@ serving adapter, and the Slow AR weight remap -- without needing a checkpoint.
 
 import pytest
 import torch
+from transformers import PretrainedConfig
 
+from vllm_omni.config.pipeline_registry import resolve_pipeline_config
 from vllm_omni.entrypoints.openai.tts_adapters import detect_tts_model_type, resolve_adapter
 from vllm_omni.entrypoints.openai.tts_adapters.audio8_tts import Audio8TTSAdapter
 from vllm_omni.model_executor.models.audio8_tts.audio8_tts_falcon_slow_ar import (
@@ -99,14 +101,28 @@ def test_pipeline_resolver_routes_by_slow_backbone():
     p06 = resolve_arktts_pipeline(Audio8TTSConfig())
     assert p01 is AUDIO8_TTS_01B_PIPELINE
     assert p06 is AUDIO8_TTS_PIPELINE
+    assert p01 is not None and p06 is not None
     assert p01.model_arch == "Audio8TTS01BSlowARForConditionalGeneration"
     assert p01.stages[0].model_stage == "audio8_tts_01b_slow_ar"
     # 0.1b tokenizer maps <|im_end|> to 228, not the 0.6b's 151645.
     assert p01.stages[0].sampling_constraints["stop_token_ids"] == [228]
     # Both variants decode through the identical codec stage.
     assert p01.stages[1].model_stage == p06.stages[1].model_stage == "audio8_tts_codec_decoder"
-    # Missing / non-arktts config falls back to the 0.6b default rather than raising.
+    # Missing config retains the 0.6b default.
     assert resolve_arktts_pipeline(None) is AUDIO8_TTS_PIPELINE
+    # Exercise the production registry too: sorting must not replace the
+    # backbone-aware resolver with the fixed 0.6b pipeline.
+    assert resolve_pipeline_config("arktts", _config_01b()) is p01
+    assert resolve_pipeline_config("arktts", Audio8TTSConfig()) is p06
+    assert resolve_pipeline_config("arktts") is AUDIO8_TTS_PIPELINE
+
+
+@pytest.mark.parametrize("slow_backbone", [None, "falcon_h1"])
+def test_pipeline_resolver_rejects_unrelated_config(slow_backbone):
+    """Non-Audio8 configs must not claim either backbone via the registry."""
+    config = PretrainedConfig(slow_backbone=slow_backbone)
+    assert resolve_arktts_pipeline(config) is None
+    assert resolve_pipeline_config("arktts", config) is None
 
 
 def test_registry_maps_01b_arch_to_falcon_module():
