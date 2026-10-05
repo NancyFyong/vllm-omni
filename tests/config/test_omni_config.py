@@ -1046,6 +1046,7 @@ def test_sub_config_fields_match_structured_scopes():
         "interleave_mm_strings",
         "media_io_kwargs",
         "final_output",
+        "supports_running_prefix_cache_reset",
         "active_stream_window",
         "session_mode",
         "duplex_max_sessions",

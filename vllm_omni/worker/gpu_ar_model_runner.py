@@ -893,6 +893,44 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
             merged[req_id] = data
         return merged
 
+    def _call_prepare_runner_inputs(
+        self,
+        prepare_runner_inputs: Callable[..., tuple[torch.Tensor, torch.Tensor]],
+        *,
+        req_ids: list[str],
+        input_ids: torch.Tensor,
+        positions: torch.Tensor,
+        inputs_embeds: torch.Tensor | None,
+        num_computed_tokens: np.ndarray,
+        num_scheduled_tokens: np.ndarray,
+        input_ids_buffer: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Keep opt-in request metadata outside captured model forwards."""
+        if getattr(self.model, "accepts_runner_sampling_extra_args", False):
+            return prepare_runner_inputs(
+                input_ids=input_ids,
+                positions=positions,
+                inputs_embeds=inputs_embeds,
+                req_ids=req_ids,
+                num_computed_tokens=num_computed_tokens,
+                num_scheduled_tokens=num_scheduled_tokens,
+                input_ids_buffer=input_ids_buffer,
+                sampling_extra_args=[
+                    params.extra_args if params and params.extra_args else {}
+                    for params in (self.requests[rid].sampling_params for rid in req_ids)
+                ],
+                discard_mask=self.discard_request_mask.np[: len(req_ids)],
+            )
+        return prepare_runner_inputs(
+            input_ids=input_ids,
+            positions=positions,
+            inputs_embeds=inputs_embeds,
+            req_ids=req_ids,
+            num_computed_tokens=num_computed_tokens,
+            num_scheduled_tokens=num_scheduled_tokens,
+            input_ids_buffer=input_ids_buffer,
+        )
+
     @torch.inference_mode()
     def execute_model(
         self,
@@ -1150,11 +1188,12 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin, Duplex
         # for multimodal position detection, fix decode position offsets).
         prepare_runner_inputs = getattr(self.model, "prepare_runner_inputs", None)
         if callable(prepare_runner_inputs):
-            input_ids, positions = prepare_runner_inputs(
+            input_ids, positions = self._call_prepare_runner_inputs(
+                prepare_runner_inputs,
+                req_ids=req_ids[:num_reqs],
                 input_ids=input_ids,
                 positions=positions,
                 inputs_embeds=inputs_embeds,
-                req_ids=req_ids[:num_reqs],
                 num_computed_tokens=self.input_batch.num_computed_tokens_cpu[:num_reqs],
                 num_scheduled_tokens=num_scheduled_tokens_np[:num_reqs],
                 input_ids_buffer=self.input_ids.gpu[:num_tokens_padded],
