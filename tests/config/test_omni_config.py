@@ -1997,15 +1997,26 @@ def test_diffusion_quantization_mapping_reaches_terminal_config(monkeypatch):
     assert cfg.quantization_config.get_name() == "int8"
 
 
-def test_video_output_transport_mapping_is_normalized() -> None:
+@pytest.mark.parametrize("mapping_type", ["dict", "readonly", "omegaconf"])
+def test_video_output_transport_mapping_is_normalized(mapping_type: str) -> None:
+    from collections.abc import Mapping
+    from types import MappingProxyType
+
+    from omegaconf import OmegaConf
+
     from vllm_omni.diffusion.data import VideoOutputTransportConfig
 
+    options: Mapping[str, str] = {"deadline": "realtime"}
+    if mapping_type == "readonly":
+        options = MappingProxyType(options)
+    elif mapping_type == "omegaconf":
+        options = OmegaConf.create(options)
     cfg = omni_config_module._DiffusionConfigProjection(
         video_output_transport={
             "enable_device_postprocess": True,
             "transport_mode": "url",
             "output_format": "webm",
-            "video_codec_options": {"deadline": "realtime"},
+            "video_codec_options": options,
         },
     )
 

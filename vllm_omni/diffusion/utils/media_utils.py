@@ -143,6 +143,18 @@ def resolve_encoder_settings(
     return requested_codec, default_video_codec_options(requested_codec, low_latency=low_latency)
 
 
+def _video_stream_options(
+    codec: str,
+    crf: str,
+    video_codec_options: dict[str, str] | None,
+) -> dict[str, str]:
+    # NVENC uses cq/rc, not the software encoders' CRF default.
+    options = {} if codec.endswith("_nvenc") else {"crf": str(crf)}
+    if video_codec_options:
+        options.update(video_codec_options)
+    return options
+
+
 _CHUNKED_MP4_DONE = object()
 
 
@@ -391,10 +403,7 @@ class FragmentedMP4Muxer:
         self._stream.height = height
         self._stream.pix_fmt = "yuv420p"
 
-        options: dict[str, object] = {"crf": str(crf)}
-        if video_codec_options:
-            options.update(video_codec_options)
-        self._stream.options = options
+        self._stream.options = _video_stream_options(video_codec, crf, video_codec_options)
 
         try:
             self._stream.codec_context.max_b_frames = 0
@@ -492,7 +501,7 @@ def mux_video_audio_bytes(
     video_codec_options: dict[str, str] | None = None,
     output_format: str | None = None,
 ) -> bytes:
-    """Mux video frames and optional audio waveform into MP4 bytes.
+    """Mux video frames and optional audio waveform into MP4 or WebM bytes.
 
     Args:
         video_frames: uint8 array of shape ``(T, H, W, 3)`` (RGB).
@@ -501,10 +510,12 @@ def mux_video_audio_bytes(
         audio_sample_rate: Audio sample rate in Hz.
         video_codec: Video codec name.
         audio_codec: Audio codec name.
-        crf: Constant rate factor for the video encoder.
+        crf: Default constant rate factor for software encoders, not NVENC.
+        video_codec_options: Explicit encoder options, overriding codec defaults.
+        output_format: Container format (MP4 by default, or WebM).
 
     Returns:
-        Raw MP4 bytes ready to be written to disk or streamed.
+        Raw container bytes ready to be written to disk or streamed.
     """
     container_format = output_format or DEFAULT_OUTPUT_FORMAT
     buf = io.BytesIO()
@@ -521,10 +532,9 @@ def mux_video_audio_bytes(
     v_stream.height = video_frames.shape[1]
     v_stream.pix_fmt = "yuv420p"
 
-    options: dict[str, object] = {"crf": str(crf)}
-    if video_codec_options:
-        options.update(video_codec_options)
-    v_stream.options = options
+    v_stream.options = _video_stream_options(
+        video_codec or default_video_codec_for_format(container_format), crf, video_codec_options
+    )
 
     a_stream: av.AudioStream | None = None
     samples: np.ndarray | None = None
@@ -603,10 +613,9 @@ def mux_av_video_audio_bytes(
         v_stream.height = height
         v_stream.pix_fmt = "yuv420p"
 
-        options: dict[str, object] = {"crf": str(crf)}
-        if video_codec_options:
-            options.update(video_codec_options)
-        v_stream.options = options
+        v_stream.options = _video_stream_options(
+            video_codec or default_video_codec_for_format(container_format), crf, video_codec_options
+        )
 
         a_stream: av.AudioStream | None = None
         samples: np.ndarray | None = None

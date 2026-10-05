@@ -96,8 +96,12 @@ def test_default_settings_preserve_the_existing_http_encoder(client_kind: str) -
 
 @pytest.mark.parametrize("typed_stage", [False, True], ids=["legacy", "typed"])
 @pytest.mark.parametrize("transport_mode", ["url", "shared_memory"])
+@pytest.mark.parametrize("inline", [False, True], ids=["subprocess", "inline"])
 def test_out_of_process_engine_view_preserves_final_stage_transport(
-    monkeypatch: pytest.MonkeyPatch, typed_stage: bool, transport_mode: str
+    monkeypatch: pytest.MonkeyPatch,
+    typed_stage: bool,
+    transport_mode: Literal["url", "shared_memory"],
+    inline: bool,
 ) -> None:
     engine = AsyncOmniEngine.__new__(AsyncOmniEngine)
     engine.model = "unused"
@@ -148,7 +152,25 @@ def test_out_of_process_engine_view_preserves_final_stage_transport(
     monkeypatch.setattr(diffusion_data, "resolve_model_class_name", lambda model: "WanPipeline")
     monkeypatch.setattr(model_metadata, "get_diffusion_model_metadata", lambda model_class: _ModelMetadata())
 
-    settings = resolve_video_output_settings(engine)
+    client = engine
+    if inline:
+        from vllm_omni.diffusion.inline_stage_diffusion_client import InlineStageDiffusionClient
+        from vllm_omni.entrypoints.async_omni import AsyncOmni
+
+        engine.stage_clients = []
+        for index in range(2):
+            stage_client = InlineStageDiffusionClient.__new__(InlineStageDiffusionClient)
+            stage_client.stage_id = index
+            stage_client.final_output = index == 1
+            stage_client.od_config = diffusion_data.OmniDiffusionConfig(
+                model=None,
+                video_output_transport=VideoOutputTransportConfig.from_value(transport if index == 1 else None),
+            )
+            engine.stage_clients.append(stage_client)
+        client = AsyncOmni.__new__(AsyncOmni)
+        client.engine = engine
+
+    settings = resolve_video_output_settings(client)
 
     assert settings.transport_mode == transport_mode
     assert settings.output_format == "webm"
@@ -157,7 +179,7 @@ def test_out_of_process_engine_view_preserves_final_stage_transport(
     assert settings.shared_memory_ttl_seconds == 17
 
     overridden = resolve_video_output_settings(
-        engine,
+        client,
         {"output_format": "mp4", "video_codec": "libx265", "video_codec_options": {"crf": "18"}},
     )
     assert overridden.transport_mode == transport_mode

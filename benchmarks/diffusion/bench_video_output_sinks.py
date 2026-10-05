@@ -93,7 +93,9 @@ def _consumer(mode: str, payload_path: str, expected_digest: str) -> None:
                 decoded = np.stack([frame.to_ndarray(format="rgb24") for frame in container.decode(stream)])
         finally:
             os.unlink(output_path)
-        lossless = _digest(decoded) == expected_digest
+        decoded_ok = decoded.shape == tuple(payload["shape"]) and decoded.dtype == np.uint8
+        # MP4 uses lossy YUV420 encoding; pixel identity is not its contract.
+        lossless = None
         rss = _rss_mib()
 
     print(
@@ -105,6 +107,7 @@ def _consumer(mode: str, payload_path: str, expected_digest: str) -> None:
                 "rss_mib": round(rss, 1),
                 "delta_mib": round(rss - baseline, 1),
                 "boundary_bytes": os.path.getsize(payload_path),
+                "decoded_ok": lossless if mode == "shared_memory" else decoded_ok,
                 "lossless": lossless,
             }
         )
@@ -150,7 +153,7 @@ def main() -> None:
                 else:
                     from vllm_omni.entrypoints.openai.video_api_utils import encode_video_base64
 
-                    payload = {"b64_json": encode_video_base64(frames, fps=24)}
+                    payload = {"b64_json": encode_video_base64(frames, fps=24), "shape": list(frames.shape)}
                 with open(payload_path, "w") as output:
                     json.dump(payload, output)
                 measurements.append(_run_consumer(mode, payload_path, expected_digest))
@@ -173,18 +176,24 @@ def main() -> None:
                     "delta_mean_mib": sum(deltas) / len(deltas),
                     "delta_min_mib": min(deltas),
                     "delta_max_mib": max(deltas),
-                    "lossless": all(bool(measurement["lossless"]) for measurement in measurements),
+                    "decoded_ok": all(bool(measurement["decoded_ok"]) for measurement in measurements),
+                    "lossless": (
+                        all(bool(measurement["lossless"]) for measurement in measurements)
+                        if mode == "shared_memory"
+                        else None
+                    ),
                 }
             )
 
-    print(f"{'sink':<15}{'boundary':>12}{'consumer RSS mean [range]':>31}{'lossless':>10}")
+    print(f"{'sink':<15}{'boundary':>12}{'consumer RSS mean [range]':>31}{'decoded':>10}{'lossless':>10}")
     for row in rows:
         boundary_mib = float(row["boundary_bytes"]) / 1024**2
         rss = (
             f"{float(row['delta_mean_mib']):.1f} "
             f"[{float(row['delta_min_mib']):.1f}, {float(row['delta_max_mib']):.1f}] MiB"
         )
-        print(f"{str(row['mode']):<15}{boundary_mib:>10.2f} MiB{rss:>29}{str(row['lossless']):>10}")
+        lossless = "n/a" if row["lossless"] is None else str(row["lossless"])
+        print(f"{str(row['mode']):<15}{boundary_mib:>10.2f} MiB{rss:>29}{str(row['decoded_ok']):>10}{lossless:>10}")
     print(f"\npayload = {payload_mib:.1f} MiB")
 
 

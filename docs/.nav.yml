@@ -14,6 +14,7 @@ nav:
         - Image Generation: serving/image_generation_api.md
         - Image Edit: serving/image_edit_api.md
         - Videos: serving/videos_api.md
+        - Video Output Transport: user_guide/diffusion/video_output_transport.md
       - Streaming and Realtime:
         - Full Duplex OpenAI: serving/realtime_openai_duplex_api.md
         - Full Duplex: serving/full_duplex_api.md
@@ -73,7 +74,6 @@ nav:
         - Overview: user_guide/diffusion_features.md
         - Feature Compatibility: user_guide/feature_compatibility.md
       - Device-side Video Postprocessing: user_guide/diffusion/device_side_video_postprocess.md
-      - Video Output Transport: user_guide/diffusion/video_output_transport.md
       - CPU Offloading:
         - Overview: user_guide/diffusion/cpu_offload.md
         - Model-Level: user_guide/diffusion/offloader/module_offload.md

@@ -38,6 +38,7 @@ from vllm_omni.entrypoints.openai.stage_params import (
     get_default_sampling_params_list,
 )
 from vllm_omni.entrypoints.openai.utils import get_stage_type, is_video_generation_pipeline, parse_lora_request
+from vllm_omni.entrypoints.openai.video.publication import drain_publication
 from vllm_omni.entrypoints.openai.video_api_utils import (
     ResolvedVideoOutputSettings,
     _coerce_video_to_uint8_frames,
@@ -648,13 +649,7 @@ class OmniOpenAIServingVideo:
                 await asyncio.shield(save_task)
             except asyncio.CancelledError:
                 try:
-                    while not save_task.done():
-                        try:
-                            await asyncio.shield(save_task)
-                        except asyncio.CancelledError:
-                            # Repeated cancellation must not detach the writer.
-                            continue
-                    save_task.result()
+                    await drain_publication(save_task)
                 except Exception:
                     logger.warning(
                         "Video artifact publication %s failed during cancellation",
@@ -725,13 +720,7 @@ class OmniOpenAIServingVideo:
                         # The thread can still create a segment after cancellation.
                         # Keep its returned handle in the batch rollback set.
                         try:
-                            while not publish_task.done():
-                                try:
-                                    await asyncio.shield(publish_task)
-                                except asyncio.CancelledError:
-                                    # Repeated cancellation must not detach the thread.
-                                    continue
-                            handles.append(publish_task.result())
+                            handles.append(await drain_publication(publish_task))
                         except Exception:
                             logger.warning(
                                 "Video shared-memory publication %s failed during cancellation",

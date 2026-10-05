@@ -309,13 +309,15 @@ curl -X POST http://localhost:8091/v1/videos/sync \
 
 ## Output Encoding
 
-These `extra_params` control how the server turns decoded frames into MP4 bytes.
+These `extra_params` control how the server encodes decoded frames into MP4 or
+WebM output. The `preencode_mp4` worker path remains MP4-only.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `preencode_mp4` | boolean | false | Encode the MP4 on the worker while the VAE is still decoding, instead of after the full video is materialized |
 | `preencode_batch_frames` | positive integer | 17 (H3, Wan T2V/I2V); 1 (Wan S2V) | Minimum accumulated frames per worker transfer/encoding batch; used only with `preencode_mp4=true` |
-| `video_codec` | string | deployment/default policy | MP4-compatible encoder selected by the normal output policy |
+| `output_format` | string | deployment/default policy (`mp4` when unset) | `mp4` or `webm`; request override of the deployment container |
+| `video_codec` | string | deployment/default policy | Container-compatible encoder selected by the resolved output policy |
 | `video_codec_options` | object | deployment/default policy | Encoder options, such as `{"preset": "ultrafast", "threads": "0"}` |
 
 With `preencode_mp4` enabled, each committed VAE chunk leaves the accelerator and
@@ -323,7 +325,8 @@ is encoded while later chunks are still decoding, so host transfer and CPU
 encoding overlap the remaining decode instead of following it. Deployment
 codec settings and request overrides are resolved before generation and the
 same effective codec policy is forwarded to the worker. The response is
-unchanged: the same complete MP4, byte-for-byte equivalent frames.
+unchanged: one complete, playable MP4. Lossy encoding does not promise bitwise
+RGB identity or identical encoded bytes across independent encoding runs.
 
 ```bash
 curl -X POST http://localhost:8091/v1/videos/sync \

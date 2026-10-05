@@ -98,6 +98,38 @@ def test_unavailable_encoder_failure_is_propagated_from_encoding_process(mocker,
     container.add_stream.assert_called_once()
 
 
+@pytest.mark.parametrize("codec", ["h264_nvenc", "hevc_nvenc", "libx264", "libx265"])
+@pytest.mark.parametrize("encode_path", ["array", "iterator", "chunked", "fragmented"])
+@pytest.mark.parametrize("explicit_quality", [False, True])
+def test_encoder_quality_defaults_match_codec_family(mocker, codec, encode_path, explicit_quality) -> None:
+    container = mocker.MagicMock()
+    container.__enter__.return_value = container
+    container.add_stream.return_value.encode.return_value = []
+    mocker.patch.object(media_utils.av, "open", return_value=container)
+    hardware = codec.endswith("_nvenc")
+    quality = {"cq": "23"} if hardware else {"crf": "23"}
+    options = quality if explicit_quality else default_video_codec_options(codec)
+    frames = np.zeros((2, 32, 48, 3), dtype=np.uint8)
+
+    if encode_path == "array":
+        media_utils.mux_video_audio_bytes(frames, video_codec=codec, video_codec_options=options)
+    elif encode_path == "iterator":
+        media_utils.mux_av_video_audio_bytes([], width=48, height=32, video_codec=codec, video_codec_options=options)
+    elif encode_path == "chunked":
+        with media_utils.ChunkedMP4Encoder(
+            width=48, height=32, fps=8, video_codec=codec, video_codec_options=options
+        ) as encoder:
+            encoder.push(frames)
+    else:
+        muxer = media_utils.FragmentedMP4Muxer(width=48, height=32, video_codec=codec, video_codec_options=options)
+        muxer.close()
+
+    expected = dict(options)
+    if not hardware:
+        expected.setdefault("crf", "18")
+    assert container.add_stream.return_value.options == expected
+
+
 @pytest.mark.parametrize("enable_borrowed_frames", [False, True])
 @pytest.mark.parametrize(
     ("output_format", "expected_video_codec", "expected_audio_codec"),

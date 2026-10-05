@@ -68,6 +68,16 @@ The asynchronous `POST /v1/videos` job API accepts only `bytes`. Immediate
 response modes are rejected before generation because that endpoint initially
 returns job metadata rather than the generated artifact.
 
+### Compatibility with bytes-only clients
+
+SeedVR2 long-video window restoration and recipes that use
+`curl -o output.mp4` require deployment `transport_mode="bytes"`. With
+`base64`, `url`, or `shared_memory`, the synchronous endpoint returns JSON
+rather than a video file, even on HTTP 200. Clients must inspect `Content-Type`
+before decoding or saving a response as video. These clients cannot override
+`transport_mode` per request; use a bytes-configured deployment or a client
+that consumes the selected JSON transport.
+
 ## Containers and encoders
 
 Container defaults are resolved as one policy so video, audio, and MIME types
@@ -89,6 +99,8 @@ unsupported by Opus, such as 44.1 kHz, is resampled to 48 kHz.
 Hardware encoding is optional. In particular, Hopper data-center GPUs do not
 provide an NVENC block. On those workers, leave `video_codec` unset to use the
 software default, or explicitly select `h264`/`libx264` instead of `h264_nvenc`.
+NVENC quality controls use options such as `cq` and `rc`; the encoder does not
+automatically add the software encoders' `crf` default to NVENC.
 
 The fragmented WebSocket stream remains MP4-only and resolves its low-latency
 H.264 codec/options independently of artifact output format, codec, and codec
@@ -143,7 +155,10 @@ with borrowed_video_frames(handle) as frames:
 
 Leaving the block unlinks the segment. If no consumer claims it, the server's
 lease sweeper unlinks it after `shared_memory_ttl_seconds`; process shutdown also
-cleans outstanding leases. Audio-bearing video output is rejected in this mode
+cleans outstanding leases. The handle's `expires_at` is a Unix wall-clock
+timestamp for client admission; the server lease uses monotonic elapsed time.
+System clock adjustments can therefore make a client reject a handle earlier
+than the server reaps it. Audio-bearing video output is rejected in this mode
 rather than silently dropping audio.
 
 !!! warning
@@ -166,8 +181,10 @@ python benchmarks/diffusion/bench_video_output_sinks.py \
 
 This microbenchmark starts a fresh consumer for each measurement, takes its RSS
 baseline after imports, reads every frame byte, and verifies that shared-memory
-segments are removed. It measures the JSON boundary and consumer memory, not
-HTTP delivery or end-to-end generation latency.
+segments are removed. Shared-memory correctness uses bitwise frame identity;
+base64 MP4 correctness checks successful decoding, frame shape, and dtype,
+not lossless RGB equality. It measures the JSON boundary and consumer memory,
+not HTTP delivery or end-to-end generation latency.
 
 To compare delivery modes, measure the real `/v1/videos/sync` route with identical
 decoded frames and encoder settings. Separate response latency from the time

@@ -64,6 +64,7 @@ from vllm_omni.entrypoints.openai.serving_video import (
 from vllm_omni.entrypoints.openai.storage import STORAGE_MANAGER
 from vllm_omni.entrypoints.openai.stores import VIDEO_STORE
 from vllm_omni.entrypoints.openai.utils import get_stage_type
+from vllm_omni.entrypoints.openai.video.publication import drain_publication
 from vllm_omni.entrypoints.openai.video_api_utils import (
     VideoFrames,
     _decode_image_bytes,
@@ -440,12 +441,7 @@ async def _run_video_generation_job(
             # Cancelling the waiter cannot stop the storage thread. Drain the
             # writer before rollback, even if DELETE cancels this task again.
             try:
-                while not save_task.done():
-                    try:
-                        await asyncio.shield(save_task)
-                    except asyncio.CancelledError:
-                        continue
-                save_task.result()
+                await drain_publication(save_task)
             except Exception:
                 logger.warning("Video job %s save failed during cancellation", video_id, exc_info=True)
             raise
