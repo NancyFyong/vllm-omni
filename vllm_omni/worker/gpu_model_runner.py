@@ -2148,7 +2148,19 @@ class OmniGPUModelRunner(PrefixCacheRunnerMixin, GPUModelRunner):
         model_kwargs_extra = self._build_model_kwargs_extra()
         update_decode_metadata = getattr(self.model, "update_decode_step_metadata", None)
         if getattr(self.model, "supports_omni_decode_step_metadata", False) and callable(update_decode_metadata):
+            cpu_input_tail_ids = None
+            if (
+                getattr(self.model, "requires_cpu_input_tail_ids", False)
+                and not self.use_async_scheduling
+                and input_ids is not None
+                and input_ids.data_ptr() == self.input_ids.gpu.data_ptr()
+            ):
+                count = len(self.input_batch.req_ids)
+                tails = self.query_start_loc.cpu[1 : count + 1].to(torch.long) - 1
+                if count and bool((tails >= 0).all()) and bool((tails < input_ids.numel()).all()):
+                    cpu_input_tail_ids = self.input_ids.cpu.index_select(0, tails).tolist()
             update_decode_metadata(
+                cpu_input_tail_ids=cpu_input_tail_ids,
                 input_ids=input_ids,
                 positions=positions,
                 inputs_embeds=inputs_embeds,
@@ -2156,14 +2168,19 @@ class OmniGPUModelRunner(PrefixCacheRunnerMixin, GPUModelRunner):
                 req_ids=self.input_batch.req_ids,
             )
 
-        model_output = super()._model_forward(
-            input_ids=input_ids,
-            positions=positions,
-            intermediate_tensors=intermediate_tensors,
-            inputs_embeds=inputs_embeds,
-            **model_kwargs,
-            **model_kwargs_extra,
-        )
+        try:
+            model_output = super()._model_forward(
+                input_ids=input_ids,
+                positions=positions,
+                intermediate_tensors=intermediate_tensors,
+                inputs_embeds=inputs_embeds,
+                **model_kwargs,
+                **model_kwargs_extra,
+            )
+        finally:
+            finish_decode_step = getattr(self.model, "finish_decode_step_forward", None)
+            if callable(finish_decode_step):
+                finish_decode_step()
         # CUDAGraphWrapper's weak_ref_tensors preserves the fields but turns
         # NamedTuple outputs into plain tuples. Restore the Omni envelope
         # before a model adapter or extraction discards its multimodal fields.

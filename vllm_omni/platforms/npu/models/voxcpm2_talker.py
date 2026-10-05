@@ -38,8 +38,8 @@ def apply_voxcpm2_talker_patch() -> None:
     if _PATCHED:
         return
 
-    # The model defers resolving ``current_omni_platform`` until construction,
-    # so importing it while NPUOmniPlatform is initialized is cycle-free.
+    # Call this only after platform initialization: the model's transitive
+    # imports resolve ``current_omni_platform``.
     from vllm_omni.model_executor.models.voxcpm2.voxcpm2_talker import (
         VoxCPM2TalkerForConditionalGeneration,
     )

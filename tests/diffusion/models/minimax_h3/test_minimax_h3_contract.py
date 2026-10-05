@@ -238,8 +238,12 @@ def test_decode_to_mp4_batches_consumer_transfers(monkeypatch):
     ],
 )
 @pytest.mark.parametrize("batch_extra, batch_frames", [({}, 17), ({"preencode_batch_frames": 5}, 5)])
-def test_preencode_request_preserves_serving_codec_defaults(codec_extra, expected, batch_extra, batch_frames):
+@pytest.mark.parametrize("upscale", [False, True], ids=["native", "upscaled"])
+def test_preencode_request_preserves_serving_codec_defaults(
+    monkeypatch, codec_extra, expected, batch_extra, batch_frames, upscale
+):
     from vllm_omni.diffusion.models.minimax_h3 import MiniMaxH3Pipeline
+    from vllm_omni.diffusion.models.minimax_h3.latent_upscaler import MiniMaxH3LatentUpscaleTarget
     from vllm_omni.diffusion.request import OmniDiffusionRequest
     from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
     from vllm_omni.inputs.data import OmniDiffusionSamplingParams
@@ -260,6 +264,9 @@ def test_preencode_request_preserves_serving_codec_defaults(codec_extra, expecte
     pipeline._cache_dit_runtime = Mock()
     pipeline.diffuse = Mock(return_value=(torch.zeros(1), torch.zeros(1)))
     pipeline.decode_to_mp4 = Mock(return_value=b"mp4")
+    target = MiniMaxH3LatentUpscaleTarget(latent_height=96, latent_width=168, scale=2.0) if upscale else None
+    monkeypatch.setattr(pipeline, "_resolve_latent_upscale", lambda *args, **kwargs: target)
+    monkeypatch.setattr(pipeline, "_upscaled_latent", lambda latent, target: latent)
     sampling = OmniDiffusionSamplingParams(
         width=1344,
         height=768,
@@ -281,6 +288,8 @@ def test_preencode_request_preserves_serving_codec_defaults(codec_extra, expecte
 
     pipeline.forward(batch)
 
+    assert pipeline.decode_to_mp4.call_args.kwargs["height"] == (1536 if upscale else 768)
+    assert pipeline.decode_to_mp4.call_args.kwargs["width"] == (2688 if upscale else 1344)
     assert pipeline.decode_to_mp4.call_args.kwargs["video_codec"] == "libx264"
     assert pipeline.decode_to_mp4.call_args.kwargs["video_codec_options"] == expected
     assert pipeline.decode_to_mp4.call_args.kwargs["batch_frames"] == batch_frames
@@ -3555,7 +3564,7 @@ def test_request_cancellation_at_prepare_and_decode_boundaries(preencode, cancel
     def prepare(*args):
         if cancel_phase == "prepare":
             registry.cancel(["request"])
-        return {"num_outputs": 1, "seed": 1101, "preencode_mp4": preencode}
+        return {"num_outputs": 1, "seed": 1101, "preencode_mp4": preencode, "height": 2, "width": 2}
 
     def diffuse(**kwargs):
         registry.cancel(["request"])

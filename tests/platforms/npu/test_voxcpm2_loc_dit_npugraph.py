@@ -76,12 +76,13 @@ def test_model_patch_wraps_init_and_is_idempotent(monkeypatch) -> None:
     assert model.prefix == "talker"
 
 
-def test_npu_platform_registers_patch_and_keeps_worker_cls(monkeypatch) -> None:
+def test_npu_platform_defers_patch_until_device_setup(monkeypatch) -> None:
     pytest.importorskip(
         "vllm_ascend",
         reason="NPU platform registration requires the optional vllm-ascend plugin",
     )
     from vllm_ascend import utils as ascend_utils
+    from vllm_ascend.platform import NPUPlatform
 
     from vllm_omni.platforms.npu import _310p
     from vllm_omni.platforms.npu.models import (
@@ -115,7 +116,21 @@ def test_npu_platform_registers_patch_and_keeps_worker_cls(monkeypatch) -> None:
     worker_cls = NPUOmniPlatform.get_omni_ar_worker_cls()
 
     assert worker_cls == "vllm_omni.platforms.npu.worker.npu_ar_worker.NPUARWorker"
-    assert calls == ["voxcpm2"]
+    assert calls == []
+
+    device = torch.device("npu:0")
+    monkeypatch.setattr(
+        NPUPlatform,
+        "set_device",
+        classmethod(lambda cls, device: calls.append(("set_device", device))),
+    )
+    monkeypatch.setattr(ascend_utils, "enable_custom_op", lambda: calls.append("custom_ops"))
+    monkeypatch.setattr(torch.npu, "config", SimpleNamespace(allow_internal_format=False))
+
+    NPUOmniPlatform.set_device(device)
+
+    assert calls == [("set_device", device), "voxcpm2", "custom_ops"]
+    assert torch.npu.config.allow_internal_format
 
 
 def test_loc_dit_npugraph_supports_wrapped_subclass_and_wraps_once(monkeypatch) -> None:

@@ -68,20 +68,25 @@ class NPUOmniPlatform(OmniPlatform, NPUPlatform):
         from vllm_omni.platforms.npu.models.qwen3_tts_tokenizer_v2 import (
             apply_qwen3_tts_tokenizer_v2_patch,
         )
-        from vllm_omni.platforms.npu.models.voxcpm2_talker import (
-            apply_voxcpm2_talker_patch,
-        )
 
         adapt_patch(is_global_patch=True)
         apply_minicpmo_4_5_code2wav_patch()
         apply_qwen3_tts_patches()
         apply_qwen3_tts_tokenizer_v2_patch()
-        apply_voxcpm2_talker_patch()
         apply_310p_patches()
 
     @classmethod
     def set_device(cls, device: torch.device) -> None:
         super().set_device(device)
+
+        # The model's dependencies resolve current_omni_platform, so importing
+        # it in __init__ would re-enter platform initialization. Install the
+        # patch in the worker, before it constructs the model instead.
+        from vllm_omni.platforms.npu.models.voxcpm2_talker import (
+            apply_voxcpm2_talker_patch,
+        )
+
+        apply_voxcpm2_talker_patch()
 
         # Register vllm_ascend custom ops (torch.ops._C_ascend.*).
         from vllm_ascend.utils import enable_custom_op
