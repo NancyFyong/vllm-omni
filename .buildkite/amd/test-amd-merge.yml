@@ -126,6 +126,7 @@ steps:
       commands:
         - export VLLM_LOGGING_LEVEL=DEBUG
         - export VLLM_WORKER_MULTIPROC_METHOD=spawn
+        - export DIFFUSION_ATTENTION_BACKEND=TORCH_SDPA
         - pytest -s -v tests/diffusion/offloader/test_diffusion_cpu_offload.py
         - >-
           pytest -s -v tests/diffusion/offloader/test_diffusion_layerwise_offload.py

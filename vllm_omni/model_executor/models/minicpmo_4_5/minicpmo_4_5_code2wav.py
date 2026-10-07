@@ -288,6 +288,8 @@ class MiniCPMO45Code2Wav(nn.Module):
         self._runtime_prompt_dir = tempfile.TemporaryDirectory(
             prefix="minicpmo45-runtime-prompts-",
         )
+        from vllm_omni.platforms import current_omni_platform
+
         extra = self._extra_config()
         self._runtime_prompt_cache_size = int(extra.get("token2wav_runtime_prompt_cache_size", 4))
         if self._runtime_prompt_cache_size < 0:
@@ -342,7 +344,11 @@ class MiniCPMO45Code2Wav(nn.Module):
             "max_graph_batch": max_graph_batch,
             "micro_batch_size": micro_batch_size,
             "pad_max_rows": extra.get("whole_euler_pad_max_rows"),
-            "fused_body": bool(extra.get("cfm_fused_body", False)),
+            # The fused body uses tiled TF32 attention on NVIDIA SM80+;
+            # older CUDA devices retain its SDPA fallback. Respect TF32 opt-out.
+            "fused_body": bool(
+                extra.get("cfm_fused_body", current_omni_platform.is_cuda() and _tf32_mode(extra) != "off")
+            ),
             "slot_pool": bool(extra.get("cfm_slot_pool", False)),
             "row_offset_merge": extra.get("cfm_row_offset_merge", False) is True,
         }
