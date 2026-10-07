@@ -22,6 +22,16 @@ from vllm_omni.worker_v2.model_states.omni_model_state import OmniModelState, _m
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
 
 
+def test_prepare_attn_forwards_release_model_specific_metadata():
+    state = object.__new__(OmniModelState)
+    metadata = object()
+    output = object()
+    batch = SimpleNamespace()
+    with patch.object(DefaultModelState, "prepare_attn", return_value=output) as prepare:
+        assert state.prepare_attn(batch, None, (), None, [], None, model_specific_attn_metadata=metadata) is output
+    assert prepare.call_args.kwargs["model_specific_attn_metadata"] is metadata
+
+
 class _DummyInputBatch:
     is_prefilling_np: np.ndarray
     req_ids: list[str]
@@ -593,8 +603,13 @@ def test_eager_decode_without_a_frame_fails_loudly():
         state._eager_state._apply_eager_frames(batches, torch.zeros((1, _EAGER_DIM)), _EagerBatch([1]), None)
 
 
-def test_run_preprocess_records_rows_that_keep_a_sample():
+@pytest.mark.parametrize("has_stream_decoder", [True, False])
+def test_run_preprocess_records_rows_that_keep_a_sample(has_stream_decoder):
     state = _make_eager_state()
+    if not has_stream_decoder:
+        # Eager-MTP talkers without an in-Talker codec (Qwen3-Omni) do not
+        # define the attribute at all.
+        del state.model.stream_decoder
     _fill_buffers(state, "chunk", "final", "decode")
     state._eager_ready = {2: "decode"}
     state._eager_embeds[2] = 4.0

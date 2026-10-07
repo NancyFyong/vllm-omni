@@ -73,14 +73,13 @@ from vllm.entrypoints.serve.utils.api_utils import (
 )
 from vllm.entrypoints.serve.utils.orca_metrics import metrics_header
 from vllm.entrypoints.serve.utils.request_logger import RequestLogger
-from vllm.entrypoints.speech_to_text.realtime.serving import OpenAIServingRealtime
 from vllm.entrypoints.speech_to_text.transcription.serving import (
     OpenAIServingTranscription,
 )
 from vllm.entrypoints.speech_to_text.translation.serving import (
     OpenAIServingTranslation,
 )
-from vllm.logger import init_logger
+from vllm.logger import configure_logging_from_args, init_logger
 from vllm.renderers.online_renderer import OnlineRenderer
 from vllm.tasks import POOLING_TASKS
 from vllm.tool_parsers import ToolParserManager
@@ -695,7 +694,6 @@ async def _init_duplex_app_state(
         "openai_streaming_speech",
         "openai_streaming_video",
         "openai_streaming_video_output",
-        "openai_serving_realtime",
         "openai_serving_realtime_robot",
         "anthropic_serving_messages",
     ):
@@ -1231,12 +1229,6 @@ async def omni_init_app_state(
         else None
     )
     state.openai_serving_duplex = None
-    state.openai_serving_realtime = OpenAIServingRealtime(
-        engine_client=engine_client,
-        models=state.openai_serving_models,
-        request_logger=request_logger,
-    )
-
     state.openai_serving_video = OmniOpenAIServingVideo(
         engine_client,
         model_name=served_model_names[0] if served_model_names else None,
@@ -3127,6 +3119,8 @@ async def omni_sleep(request: OmniSleepRequest, raw_request: Request):
         raise HTTPException(status_code=501, detail="Engine does not support sleep")
     try:
         acks = await engine_client.sleep(stage_ids=request.stage_ids, level=request.level)
+    except ValueError as e:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=str(e)) from e
     except RuntimeError as e:
         raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=f"Failed to sleep: {e}") from e
     finally:
@@ -3151,6 +3145,8 @@ async def omni_wakeup(request: OmniWakeupRequest, raw_request: Request):
         acks = await engine_client.wake_up(stage_ids=request.stage_ids)
     except NotImplementedError:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST.value, detail=str(e)) from e
     except RuntimeError as e:
         raise HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value, detail=f"Failed to wake up: {e}") from e
     for sid in request.stage_ids:
@@ -3170,6 +3166,7 @@ if __name__ == "__main__":
     # when __main__ is called, i.e., --omni is only used when called through the entrypoints.
     parser.add_argument("--omni", action="store_true", default=False)
     args = parser.parse_args()
+    configure_logging_from_args(args)
     # sync args.model to model_tag, because if we pass the model positionally,
     # args.model will be the default from vLLM's ModelConfig (currently
     # Qwen/Qwen3-0.6B) and crash cryptically.

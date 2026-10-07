@@ -721,11 +721,15 @@ class OmniStageDiffusionParallelConfig(OmniStageParallelConfig):
             raise ValueError("allgather_degree > 1 is mutually exclusive with ulysses_degree/ring_degree > 1")
         if self.ulysses_mode not in {"strict", "advanced_uaa"}:
             raise ValueError("ulysses_mode must be 'strict' or 'advanced_uaa'")
-        if self.vae_parallel_mode not in {"tile", "spatial_shard_height", "spatial_shard_width"}:
+        if self.vae_parallel_mode not in {"tile", "batch", "spatial_shard_height", "spatial_shard_width"}:
             raise ValueError(
-                "vae_parallel_mode must be one of {'tile', 'spatial_shard_height', 'spatial_shard_width'}, "
+                "vae_parallel_mode must be one of {'tile', 'batch', 'spatial_shard_height', 'spatial_shard_width'}, "
                 f"but got {self.vae_parallel_mode!r}."
             )
+        if self.vae_parallel_mode == "batch" and (
+            self.data_parallel_size != 1 or self.pipeline_parallel_size != 1 or self.cfg_parallel_size != 1
+        ):
+            raise ValueError("VAE batch parallel decode requires DP, PP, and CFG parallel sizes to be 1")
 
         other_parallel_world_size = (
             self.pipeline_parallel_size
@@ -1140,6 +1144,9 @@ _DIFFUSION_MOVED_SHARED_FIELDS = frozenset(
         "disable_autocast",
     }
 )
+# Runtime-populated OmniDiffusionConfig state (init=False) that is never
+# user-configurable and therefore not part of the projection.
+_DIFFUSION_INTERNAL_FIELDS = frozenset({"ray_worker_env"})
 
 
 _STAGE_DEPLOY_ENGINE_FIELDS: tuple[str, ...] = tuple(_STAGE_DEPLOY_FIELDS)
